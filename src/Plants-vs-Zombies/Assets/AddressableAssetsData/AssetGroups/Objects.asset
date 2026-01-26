@@ -20,6 +20,16 @@ MonoBehaviour:
     m_ReadOnly: 0
     m_SerializedLabels: []
     FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 86b9eab31c3cf98499b1269fa8deee89
+    m_Address: CoconutCannon
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: aeb2a723edb8c7c41a67c0c4b6f36f2b
+    m_Address: Enemy/BasicZombie
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
   m_ReadOnly: 0
   m_Settings: {fileID: 11400000, guid: 8a7a216d573ede648a1f9eed6e3b5aeb, type: 2}
   m_SchemaSet:

@@ -186,6 +186,8 @@ namespace Core.States
         public void Enter()
         {
             _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            
+            _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
         }
 
         public void Exit()
@@ -259,6 +261,142 @@ DefaultImporter:
   assetBundleName: 
   assetBundleVariant: 
 
+
+// ===== Features/Cannon.meta =====
+﻿fileFormatVersion: 2
+guid: aff8da10302e4d4b835e52b48e042164
+timeCreated: 1769440039
+
+// ===== Features/Cannon/CannonController.cs =====
+﻿using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Input;
+using Physics;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+using Zenject;
+
+namespace Features.Cannon
+{
+    /// <summary>
+    /// Controls static plant rotation (WASD) and firing (Space).
+    /// </summary>
+    public class CannonController : MonoBehaviour
+    {
+        [Header("References")]
+        [SerializeField] private Transform _muzzle;
+        [SerializeField] private Transform _horizontalAxis;
+        [SerializeField] private Transform _verticalAxis;
+        [SerializeField] private TrajectoryVisualizer _visualizer;
+        
+        [Header("Settings")]
+        [SerializeField] private AssetReference _projectileAsset;
+        [SerializeField] private float _rotationSpeed = 45f;
+        [SerializeField] private float _initialSpeed = 20f;
+
+        [SerializeField] private float _minPitch = -10f;
+        [SerializeField] private float _maxPitch = 45f;
+        [SerializeField] private float _minYaw = -45f;
+        [SerializeField] private float _maxYaw = 45f;
+        
+        [Header("Physics Config")]
+        [SerializeField] private float _mass = 2f;
+        [SerializeField] private float _radius = 0.2f;
+        [SerializeField] private float _dragCoeff = 0.47f;
+        [SerializeField] private float _airDensity = 1.225f;
+        [SerializeField] private Vector3 _wind = Vector3.zero;
+
+        private IInputService _inputService;
+        private IGameObjectFactory _factory;
+        private bool _isActive;
+
+        private float _currentYaw;
+        private float _currentPitch;
+
+        [Inject]
+        public void Construct(IInputService inputService, IGameObjectFactory factory)
+        {
+            _inputService = inputService;
+            _factory = factory;
+        }
+
+        private void Start()
+        {
+            _isActive = true; 
+            _inputService.OnFirePerformed += HandleFireInput;
+        }
+
+        private void OnDestroy()
+        {
+            if (_inputService != null)
+                _inputService.OnFirePerformed -= HandleFireInput;
+        }
+
+        private void Update()
+        {
+            if (!_isActive) return;
+
+            HandleAiming();
+            UpdateTrajectory();
+        }
+
+        public void SetControlActive(bool isActive)
+        {
+            _isActive = isActive;
+            if (!_isActive)
+            {
+                _visualizer.Clear();
+            }
+        }
+
+        private void HandleAiming()
+        {
+            Vector2 input = _inputService.GetAimInput();
+
+            if (input.sqrMagnitude > Mathf.Epsilon)
+            {
+                float yawDelta = input.x * _rotationSpeed * Time.deltaTime;
+                _currentYaw = Mathf.Clamp(_currentYaw + yawDelta, _minYaw, _maxYaw);
+                _horizontalAxis.localRotation = Quaternion.Euler(0, _currentYaw, 0);
+                
+                float pitchDelta = -input.y * _rotationSpeed * Time.deltaTime; 
+                _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _minPitch, _maxPitch);
+                _verticalAxis.localRotation = Quaternion.Euler(_currentPitch, 0, 0);
+            }
+        }
+
+        private void UpdateTrajectory()
+        {
+            Vector3 startVel = _muzzle.forward * _initialSpeed;
+            _visualizer.SimulateTrajectory(_muzzle.position, startVel, _mass, _radius, _dragCoeff, _airDensity, _wind);
+        }
+
+        private void HandleFireInput()
+        {
+            if (_isActive)
+                Fire();
+        }
+
+        private async void Fire()
+        {
+            float currentMass = Random.Range(_mass * 0.95f, _mass * 1.05f);
+
+            var projectileObj = await _factory.InstantiateAsync(_projectileAsset, _muzzle.position, Quaternion.identity);
+
+            var physicsComp = projectileObj.GetComponent<PhysicsProjectile>();
+            
+            if (physicsComp != null)
+            {
+                Vector3 startVel = _muzzle.forward * _initialSpeed;
+                physicsComp.Initialize(currentMass, _radius, _dragCoeff, _airDensity, _wind, startVel);
+            }
+        }
+    }
+}
+
+// ===== Features/Cannon/CannonController.cs.meta =====
+﻿fileFormatVersion: 2
+guid: a654050ffaf545499ba401e4bc37d889
+timeCreated: 1769440048
 
 // ===== Infrastructure.meta =====
 fileFormatVersion: 2
@@ -610,6 +748,8 @@ using Infrastructure.Factories.Objects;
 using Infrastructure.Factories.States;
 using Infrastructure.Factories.UI;
 using Infrastructure.Providers.AssetsAddressables;
+using Infrastructure.Services.Input;
+using Infrastructure.Services.Physics;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.UI;
 using Infrastructure.Services.Window;
@@ -624,7 +764,6 @@ namespace Infrastructure.Installers
             BindServices();
             BindProviders();
             BindFactories();
-            BindObservers();
         }
 
         private void BindServices()
@@ -632,6 +771,8 @@ namespace Infrastructure.Installers
             Container.Bind<StateMachine>().AsSingle();
             Container.Bind<ISceneLoaderService>().To<SceneLoaderService>().AsSingle();
             Container.Bind<IWindowService>().To<WindowService>().AsSingle();
+            Container.Bind<IInputService>().To<InputService>().AsSingle();
+            Container.Bind<IAerodynamicsCalculationService>().To<AerodynamicsCalculationService>().AsSingle();
         }
 
         private void BindProviders()
@@ -644,11 +785,6 @@ namespace Infrastructure.Installers
             Container.Bind<IStateFactory>().To<StateFactory>().AsSingle();
             Container.Bind<IUIFactory>().To<UIFactory>().AsSingle();
             Container.Bind<IGameObjectFactory>().To<GameObjectFactory>().AsSingle();
-        }
-
-        private void BindObservers()
-        {
-            
         }
     }
 }
@@ -788,6 +924,184 @@ DefaultImporter:
   assetBundleName: 
   assetBundleVariant: 
 
+
+// ===== Infrastructure/Services/Input.meta =====
+﻿fileFormatVersion: 2
+guid: 256fe325c9ae43cdbd39e351c2cf86e4
+timeCreated: 1769439339
+
+// ===== Infrastructure/Services/Input/IInputService.cs =====
+﻿using System;
+using UnityEngine;
+
+namespace Infrastructure.Services.Input
+{
+    public interface IInputService
+    {
+        Vector2 GetAimInput();
+        bool IsFirePressed();
+
+        Vector2 GetPointerPosition();
+        bool IsClickPressed();
+
+        event Action OnFirePerformed;
+        event Action OnClickPerformed;
+        event Action OnCancelPerformed;
+
+        event Action<int> OnHotbarHotkeyPressed; 
+
+        void Enable();
+        void Disable();
+    }
+}
+
+// ===== Infrastructure/Services/Input/IInputService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 1686ec2bdf974ce284b3a5206b8c6980
+timeCreated: 1769439346
+
+// ===== Infrastructure/Services/Input/InputService.cs =====
+﻿using System;
+using UnityEngine;
+using UnityEngine.InputSystem;
+
+namespace Infrastructure.Services.Input
+{
+    public class InputService : IInputService, IDisposable
+    {
+        private readonly InputActions _inputActions;
+        
+        public event Action OnFirePerformed;
+        public event Action OnClickPerformed;
+        public event Action OnCancelPerformed;
+        public event Action<int> OnHotbarHotkeyPressed;
+
+        public InputService()
+        {
+            _inputActions = new InputActions();
+            _inputActions.Enable();
+            SubscribeEvents();
+        }
+
+        public void Enable() => _inputActions.Enable();
+        public void Disable() => _inputActions.Disable();
+
+        public Vector2 GetAimInput() => 
+            _inputActions.Gameplay.Aim.ReadValue<Vector2>();
+
+        public Vector2 GetPointerPosition() => 
+            Mouse.current.position.ReadValue();
+
+        public bool IsFirePressed() => 
+            _inputActions.Gameplay.Fire.IsPressed();
+
+        public bool IsClickPressed() => 
+            _inputActions.Gameplay.Click.IsPressed();
+
+        public void Dispose()
+        {
+            UnsubscribeEvents();
+            _inputActions?.Dispose();
+        }
+
+        private void SubscribeEvents()
+        {
+            _inputActions.Gameplay.Fire.performed += FirePerformed;
+            _inputActions.Gameplay.Click.performed += ClickPerformed;
+            _inputActions.Gameplay.Cancel.performed += CancelPerformed;
+            _inputActions.Gameplay.Hotbar.performed += HotbarPerformed;
+        }
+
+        private void UnsubscribeEvents()
+        {
+            _inputActions.Gameplay.Fire.performed -= FirePerformed;
+            _inputActions.Gameplay.Click.performed -= ClickPerformed;
+            _inputActions.Gameplay.Cancel.performed -= CancelPerformed;
+            _inputActions.Gameplay.Hotbar.performed -= HotbarPerformed;
+        }
+
+        private void FirePerformed(InputAction.CallbackContext ctx) => OnFirePerformed?.Invoke();
+        private void ClickPerformed(InputAction.CallbackContext ctx) => OnClickPerformed?.Invoke();
+        private void CancelPerformed(InputAction.CallbackContext ctx) => OnCancelPerformed?.Invoke();
+
+        private void HotbarPerformed(InputAction.CallbackContext ctx)
+        {
+            int keyIndex = (int)ctx.ReadValue<float>(); 
+            if (keyIndex > 0) OnHotbarHotkeyPressed?.Invoke(keyIndex);
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Input/InputService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: bf7e0b80f67540eba7f6954c6be46760
+timeCreated: 1769439398
+
+// ===== Infrastructure/Services/Physics.meta =====
+﻿fileFormatVersion: 2
+guid: 7ceac72dda5341819d28f851802e6d1d
+timeCreated: 1769440277
+
+// ===== Infrastructure/Services/Physics/AerodynamicsCalculationService.cs =====
+﻿using UnityEngine;
+
+namespace Infrastructure.Services.Physics
+{
+    /// <summary>
+    /// Provides physics calculations for quadratic drag and aerodynamics.
+    /// </summary>
+    public class AerodynamicsCalculationService : IAerodynamicsCalculationService
+    {
+        private const float HALF_COEFFICIENT = 0.5f;
+
+        public float CalculateCrossSectionArea(float radius)
+        {
+            return Mathf.PI * radius * radius;
+        }
+
+        public Vector3 CalculateDragForce(Vector3 velocity, float airDensity, float dragCoefficient, float area, Vector3 wind)
+        {
+            Vector3 relativeVelocity = velocity - wind;
+            float speed = relativeVelocity.magnitude;
+
+            if (speed < Mathf.Epsilon)
+                return Vector3.zero;
+
+            // Formula: Fd = -0.5 * rho * Cd * A * |v| * v
+            float forceMagnitude = HALF_COEFFICIENT * airDensity * dragCoefficient * area * speed;
+            
+            return -forceMagnitude * relativeVelocity;
+        }
+
+        public Vector3 CalculateAcceleration(Vector3 gravity, Vector3 dragForce, float mass)
+        {
+            return gravity + (dragForce / mass);
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Physics/AerodynamicsCalculationService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: dc9e46de46b0471590ecff97bc7c3562
+timeCreated: 1769440290
+
+// ===== Infrastructure/Services/Physics/IAerodynamicsCalculationService.cs =====
+﻿using UnityEngine;
+
+namespace Infrastructure.Services.Physics
+{
+    public interface IAerodynamicsCalculationService
+    {
+        float CalculateCrossSectionArea(float radius);
+        Vector3 CalculateDragForce(Vector3 velocity, float airDensity, float dragCoefficient, float area, Vector3 wind);
+        Vector3 CalculateAcceleration(Vector3 gravity, Vector3 dragForce, float mass);
+    }
+}
+
+// ===== Infrastructure/Services/Physics/IAerodynamicsCalculationService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 65bc1c9655274f56aed79bcf4f2e1dba
+timeCreated: 1769440390
 
 // ===== Infrastructure/Services/Scene.meta =====
 ﻿fileFormatVersion: 2
@@ -960,8 +1274,184 @@ DefaultImporter:
   assetBundleVariant: 
 
 
+// ===== Physics/PhysicsProjectile.cs =====
+﻿using Infrastructure.Services.Physics;
+using UnityEngine;
+using Zenject;
+
+namespace Physics
+{
+    /// <summary>
+    /// Applies quadratic drag forces to the Rigidbody in FixedUpdate.
+    /// </summary>
+    [RequireComponent(typeof(Rigidbody))]
+    [RequireComponent(typeof(SphereCollider))]
+    public class PhysicsProjectile : MonoBehaviour
+    {
+        private Rigidbody _rb;
+        private IAerodynamicsCalculationService _calculator;
+        
+        private float _mass;
+        private float _radius;
+        private float _dragCoefficient;
+        private float _airDensity;
+        private Vector3 _wind;
+        private float _area;
+        private bool _isLaunched;
+
+        [Inject]
+        public void Construct(IAerodynamicsCalculationService calculator)
+        {
+            _calculator = calculator;
+        }
+
+        private void Awake()
+        {
+            _rb = GetComponent<Rigidbody>();
+        }
+
+        public void Initialize(float mass, float radius, float dragCoeff, float airDensity, Vector3 wind, Vector3 initialVelocity)
+        {
+            _mass = Mathf.Max(0.001f, mass);
+            _radius = Mathf.Max(0.001f, radius);
+            _dragCoefficient = Mathf.Max(0f, dragCoeff);
+            _airDensity = Mathf.Max(0f, airDensity);
+            _wind = wind;
+            
+            _area = _calculator.CalculateCrossSectionArea(_radius);
+            
+            _rb.mass = _mass;
+            _rb.linearDamping = 0f; 
+            _rb.useGravity = true;
+            _rb.linearVelocity = initialVelocity;
+            
+            _isLaunched = true;
+        }
+
+        private void FixedUpdate()
+        {
+            if (!_isLaunched) return;
+
+            Vector3 dragForce = _calculator.CalculateDragForce(_rb.linearVelocity, _airDensity, _dragCoefficient, _area, _wind);
+            _rb.AddForce(dragForce, ForceMode.Force);
+        }
+    }
+}
+
+// ===== Physics/PhysicsProjectile.cs.meta =====
+﻿fileFormatVersion: 2
+guid: cbbb0a8947694f989cb6b1550bba2815
+timeCreated: 1769440357
+
+// ===== Physics/TrajectoryVisualizer.cs =====
+﻿using Infrastructure.Services.Physics;
+using UnityEngine;
+using Zenject;
+
+namespace Physics
+{
+    /// <summary>
+    /// Simulates projectile path using Euler integration and renders it via LineRenderer.
+    /// </summary>
+    [RequireComponent(typeof(LineRenderer))]
+    public class TrajectoryVisualizer : MonoBehaviour
+    {
+        [SerializeField] private int _maxPoints = 50;
+        [SerializeField] private float _timeStep = 0.1f;
+        [SerializeField] private LayerMask _collisionMask;
+        
+        private LineRenderer _lineRenderer;
+        private IAerodynamicsCalculationService _calculator;
+
+        [Inject]
+        public void Construct(IAerodynamicsCalculationService calculator)
+        {
+            _calculator = calculator;
+            _lineRenderer = GetComponent<LineRenderer>();
+            _lineRenderer.useWorldSpace = true;
+        }
+
+        public void SimulateTrajectory(Vector3 startPos, Vector3 startVelocity, float mass, float radius, float dragCoeff, float airDensity, Vector3 wind)
+        {
+            if (_maxPoints < 2) return;
+
+            _lineRenderer.positionCount = _maxPoints;
+            Vector3 currentPos = startPos;
+            Vector3 currentVel = startVelocity;
+            float area = _calculator.CalculateCrossSectionArea(radius);
+
+            _lineRenderer.SetPosition(0, currentPos);
+
+            for (int i = 1; i < _maxPoints; i++)
+            {
+                Vector3 dragForce = _calculator.CalculateDragForce(currentVel, airDensity, dragCoeff, area, wind);
+                Vector3 acceleration = _calculator.CalculateAcceleration(UnityEngine.Physics.gravity, dragForce, mass);
+
+                Vector3 nextVel = currentVel + acceleration * _timeStep;
+                Vector3 nextPos = currentPos + nextVel * _timeStep;
+
+                if (CheckCollision(currentPos, nextPos, radius, out Vector3 hitPoint))
+                {
+                    _lineRenderer.SetPosition(i, hitPoint);
+                    _lineRenderer.positionCount = i + 1;
+                    return;
+                }
+
+                currentPos = nextPos;
+                currentVel = nextVel;
+                _lineRenderer.SetPosition(i, currentPos);
+            }
+        }
+
+        private bool CheckCollision(Vector3 from, Vector3 to, float radius, out Vector3 hitPoint)
+        {
+            hitPoint = Vector3.zero;
+            Vector3 dir = to - from;
+            float dist = dir.magnitude;
+
+            if (UnityEngine.Physics.SphereCast(from, radius, dir.normalized, out RaycastHit hit, dist, _collisionMask))
+            {
+                hitPoint = hit.point;
+                return true;
+            }
+
+            return false;
+        }
+        
+        public void Clear()
+        {
+            _lineRenderer.positionCount = 0;
+        }
+    }
+}
+
+// ===== Physics/TrajectoryVisualizer.cs.meta =====
+﻿fileFormatVersion: 2
+guid: a76490d3e7d04508b9f4302daeddcf6e
+timeCreated: 1769440216
+
 // ===== UI.meta =====
 ﻿fileFormatVersion: 2
 guid: c9d66a54e60d45f294f0803836975431
 timeCreated: 1769389414
+
+// ===== all_sources.txt.meta =====
+fileFormatVersion: 2
+guid: 30e9c64da5019374c8f8a30fd47b6ae5
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== gluing-project-contents.meta =====
+fileFormatVersion: 2
+guid: 38028996272b74741bf14f81539e0c96
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
 

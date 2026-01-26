@@ -16,7 +16,6 @@ namespace Infrastructure.Services.Input
         public InputService()
         {
             _inputActions = new InputActions();
-            _inputActions.Enable();
             SubscribeEvents();
         }
 

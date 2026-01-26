@@ -34,6 +34,10 @@ namespace Features.Cannon
         [SerializeField] private float _dragCoeff = 0.47f;
         [SerializeField] private float _airDensity = 1.225f;
         [SerializeField] private Vector3 _wind = Vector3.zero;
+        
+        [Header("Camera")]
+        [SerializeField] private Transform _cameraMountPoint; 
+        public Transform CameraMountPoint => _cameraMountPoint;
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
@@ -67,6 +71,11 @@ namespace Features.Cannon
 
             HandleAiming();
             UpdateTrajectory();
+        }
+        
+        public void SetPossessed(bool isPossessed)
+        {
+            SetControlActive(isPossessed);
         }
 
         public void SetControlActive(bool isActive)

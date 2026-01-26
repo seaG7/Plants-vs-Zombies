@@ -10,17 +10,21 @@ namespace Core.States
     {
         private readonly ISceneLoaderService _sceneLoader;
         private object _sceneInstance;
+        private readonly StateMachine _stateMachine;
 
-        public MainMenuState(ISceneLoaderService sceneLoader)
+        public MainMenuState(ISceneLoaderService sceneLoader, StateMachine stateMachine)
         {
             _sceneLoader = sceneLoader;
+            _stateMachine = stateMachine;
         }
 
-        public void Enter()
+        public async void Enter()
         {
-            _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
             
-            _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
+            _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
+            
+            _stateMachine.ChangeState<GameplayState>();
         }
 
         public void Exit()

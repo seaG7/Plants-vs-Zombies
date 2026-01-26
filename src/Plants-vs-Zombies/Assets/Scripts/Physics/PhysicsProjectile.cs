@@ -1,4 +1,6 @@
-﻿using Infrastructure.Services.Physics;
+﻿using System;
+using Core.Interfaces;
+using Infrastructure.Services.Physics;
 using UnityEngine;
 using Zenject;
 
@@ -57,6 +59,18 @@ namespace Physics
 
             Vector3 dragForce = _calculator.CalculateDragForce(_rb.linearVelocity, _airDensity, _dragCoefficient, _area, _wind);
             _rb.AddForce(dragForce, ForceMode.Force);
+        }
+
+        private void OnCollisionEnter(Collision other)
+        {
+            var damageable = other.gameObject.GetComponent<IDamageable>();
+            if (damageable != null && damageable.IsAlive)
+            {
+                float damage = _mass * other.relativeVelocity.magnitude;
+                damageable.TakeDamage(damage);
+            }
+            
+            Destroy(gameObject);
         }
     }
 }
