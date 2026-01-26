@@ -3,6 +3,8 @@ using Infrastructure.Factories.Objects;
 using Infrastructure.Factories.States;
 using Infrastructure.Factories.UI;
 using Infrastructure.Providers.AssetsAddressables;
+using Infrastructure.Services.Input;
+using Infrastructure.Services.Physics;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.UI;
 using Infrastructure.Services.Window;
@@ -17,7 +19,6 @@ namespace Infrastructure.Installers
             BindServices();
             BindProviders();
             BindFactories();
-            BindObservers();
         }
 
         private void BindServices()
@@ -25,6 +26,8 @@ namespace Infrastructure.Installers
             Container.Bind<StateMachine>().AsSingle();
             Container.Bind<ISceneLoaderService>().To<SceneLoaderService>().AsSingle();
             Container.Bind<IWindowService>().To<WindowService>().AsSingle();
+            Container.Bind<IInputService>().To<InputService>().AsSingle();
+            Container.Bind<IAerodynamicsCalculationService>().To<AerodynamicsCalculationService>().AsSingle();
         }
 
         private void BindProviders()
@@ -37,11 +40,6 @@ namespace Infrastructure.Installers
             Container.Bind<IStateFactory>().To<StateFactory>().AsSingle();
             Container.Bind<IUIFactory>().To<UIFactory>().AsSingle();
             Container.Bind<IGameObjectFactory>().To<GameObjectFactory>().AsSingle();
-        }
-
-        private void BindObservers()
-        {
-            
         }
     }
 }

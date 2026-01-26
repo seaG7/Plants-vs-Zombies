@@ -1,0 +1,967 @@
+// ===== Core.meta =====
+fileFormatVersion: 2
+guid: 9ca79ee5ab72e274da3514df2fcca328
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Core/BaseStates.meta =====
+﻿fileFormatVersion: 2
+guid: d3f97ab53dd94fbea25b1ae3ae2301cc
+timeCreated: 1769387301
+
+// ===== Core/BaseStates/IEnterable.cs =====
+﻿namespace Core.BaseStates
+{
+    public interface IEnterable
+    {
+        void Enter();
+    }
+}
+
+// ===== Core/BaseStates/IEnterable.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 4e24f861e32c4599b047d7871849e13f
+timeCreated: 1769387661
+
+// ===== Core/BaseStates/IEnterableWithArg.cs =====
+﻿namespace Core.BaseStates
+{
+    public interface IEnterableWithArg<in T0>
+    {
+        void Enter(T0 arg);
+    }
+}
+
+// ===== Core/BaseStates/IEnterableWithArg.cs.meta =====
+﻿fileFormatVersion: 2
+guid: c4f3251e2c924c1eb4321780e2d8dde1
+timeCreated: 1769388218
+
+// ===== Core/BaseStates/IExitable.cs =====
+﻿namespace Core.BaseStates
+{
+    public interface IExitable
+    {
+        public void Exit();
+    }
+}
+
+// ===== Core/BaseStates/IExitable.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 0ae0e60ea4ba4733b0123efe4c1bd7ee
+timeCreated: 1769387895
+
+// ===== Core/BaseStates/IState.cs =====
+﻿namespace Core.BaseStates
+{
+    public interface IState
+    {
+    }
+}
+
+// ===== Core/BaseStates/IState.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 0c617b58fd3542ebbe5de534338f64f1
+timeCreated: 1769387874
+
+// ===== Core/BaseStates/StateMachine.cs =====
+﻿using System.Threading;
+using Infrastructure.Factories.States;
+
+namespace Core.BaseStates
+{
+    public class StateMachine
+    {
+        private readonly IStateFactory _stateFactory;
+        private IState _currentState;
+        private CancellationTokenSource _tickCancellationTokenSource;
+
+        public StateMachine(IStateFactory stateFactory)
+        {
+            _stateFactory = stateFactory;
+        }
+
+        public void ChangeState<TState>() where TState : IState
+        {
+            ExitCurrentState();
+            _currentState = _stateFactory.CreateState<TState>();
+            EnterCurrentState();
+        }
+
+        public void ChangeState<TState, T0>(T0 arg) where TState : IState
+        {
+            ExitCurrentState();
+            _currentState = _stateFactory.CreateState<TState>();
+            EnterCurrentState(arg);
+        }
+
+        private void ExitCurrentState()
+        {
+            if (_currentState is IExitable exitable)
+                exitable.Exit();
+
+            _tickCancellationTokenSource?.Cancel();
+        }
+
+        private void EnterCurrentState()
+        {
+            if (_currentState is IEnterable enterable)
+                enterable.Enter();
+        }
+        
+        private void EnterCurrentState<T0>(T0 arg)
+        {
+            if (_currentState is IEnterableWithArg<T0> enterable)
+                enterable.Enter(arg);
+        }
+    }
+}
+
+// ===== Core/BaseStates/StateMachine.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 5244f7e346744975988b549cc9d36cc2
+timeCreated: 1769387410
+
+// ===== Core/States.meta =====
+﻿fileFormatVersion: 2
+guid: 0c7582c8c2ac4af7bde2a19d314265e2
+timeCreated: 1769387276
+
+// ===== Core/States/BootstrapState.cs =====
+﻿using Core.BaseStates;
+using Cysharp.Threading.Tasks;
+using Infrastructure.Services.Scene;
+using UnityEditor;
+using UnityEngine.SceneManagement;
+
+namespace Core.States
+{
+    public class BootstrapState : IState, IEnterable
+    {
+        private readonly StateMachine _stateMachine;
+        private readonly ISceneLoaderService _sceneLoaderService;
+
+        public BootstrapState(StateMachine stateMachine, ISceneLoaderService sceneLoaderService)
+        {
+            _stateMachine = stateMachine;
+            _sceneLoaderService = sceneLoaderService;
+        }
+
+        public async void Enter()
+        {
+            _stateMachine.ChangeState<MainMenuState>();
+        }
+    }
+}
+
+// ===== Core/States/BootstrapState.cs.meta =====
+﻿fileFormatVersion: 2
+guid: e21bfc6eb8e64e01b20c99f5c07914ea
+timeCreated: 1769388269
+
+// ===== Core/States/MainMenuState.cs =====
+﻿using Core.BaseStates;
+using Cysharp.Threading.Tasks;
+using Data.Path;
+using Infrastructure.Services.Scene;
+using UnityEngine.SceneManagement;
+
+namespace Core.States
+{
+    public class MainMenuState : IState, IEnterable, IExitable
+    {
+        private readonly ISceneLoaderService _sceneLoader;
+        private object _sceneInstance;
+
+        public MainMenuState(ISceneLoaderService sceneLoader)
+        {
+            _sceneLoader = sceneLoader;
+        }
+
+        public void Enter()
+        {
+            _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+        }
+
+        public void Exit()
+        {
+            
+        }
+    }
+}
+
+// ===== Core/States/MainMenuState.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 817ebfc93d6e4ea7bc786ef98e0319f0
+timeCreated: 1769389544
+
+// ===== Data.meta =====
+fileFormatVersion: 2
+guid: 82287a7004f16454a847ba47768e6c42
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Data/Path.meta =====
+﻿fileFormatVersion: 2
+guid: cbc27d895e32417eb0e7f6e425145408
+timeCreated: 1769389303
+
+// ===== Data/Path/ScenePaths.cs =====
+﻿namespace Data.Path
+{
+    public static class ScenesPaths
+    {
+        public const string GAME = "Game";
+        public const string MAIN_MENU = "MainMenu";
+    }
+}
+
+// ===== Data/Path/ScenePaths.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 8312d457b709494baf15f09967f06572
+timeCreated: 1769391153
+
+// ===== Data/Path/UIPaths.cs =====
+﻿namespace Data.Paths
+{
+    public static class UIPaths
+    {
+        public const string LOADING_SCREEN = "UI/LoadingScreen";
+        public const string MAIN_MENU = "UI/MainMenu";
+        public const string HUD = "UI/HUD";
+        public const string PAUSE = "UI/PauseMenu";
+        public const string SETTINGS = "UI/Settings";
+    }
+}
+
+// ===== Data/Path/UIPaths.cs.meta =====
+﻿fileFormatVersion: 2
+guid: c90a44814c104cf3b877876ca93c2648
+timeCreated: 1769390715
+
+// ===== Features.meta =====
+fileFormatVersion: 2
+guid: d37903e30d38b7f40a8c30f511f24414
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Infrastructure.meta =====
+fileFormatVersion: 2
+guid: 8669cf7c8b9a5e64e9a30bf61f0fd8b4
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Infrastructure/BootstrapLoader.cs =====
+using Core;
+using Core.BaseStates;
+using Core.States;
+using Zenject;
+
+namespace Infrastructure
+{
+    public class BootstrapLoader : IInitializable
+    {
+        private readonly StateMachine _stateMachine;
+
+        public BootstrapLoader(StateMachine stateMachine)
+        {
+            _stateMachine = stateMachine;
+        }
+    
+        public void Initialize()
+        {
+            _stateMachine.ChangeState<BootstrapState>();
+        }
+    }
+}
+
+// ===== Infrastructure/BootstrapLoader.cs.meta =====
+fileFormatVersion: 2
+guid: 01a01368e40442e4caf0cbc685c8ec57
+
+// ===== Infrastructure/Factories.meta =====
+fileFormatVersion: 2
+guid: 4f0fa5849b47de24faf1a8e16b32c513
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Infrastructure/Factories/Objects.meta =====
+﻿fileFormatVersion: 2
+guid: a522b65ff7a34c4dbc848eb793bdbc89
+timeCreated: 1769390163
+
+// ===== Infrastructure/Factories/Objects/GameObjectFactory.cs =====
+﻿using Cysharp.Threading.Tasks;
+using Infrastructure.Providers.AssetsAddressables;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+using Zenject;
+
+namespace Infrastructure.Factories.Objects
+{
+    public class GameObjectFactory : IGameObjectFactory
+    {
+        private readonly DiContainer _globalContainer;
+        private readonly IAssetsAddressablesProvider _assetsProvider;
+
+        public GameObjectFactory(DiContainer globalContainer, IAssetsAddressablesProvider assetsProvider)
+        {
+            _globalContainer = globalContainer;
+            _assetsProvider = assetsProvider;
+        }
+        
+        public async UniTask<GameObject> InstantiateAsync(string path, Vector3? position = null,
+            Quaternion? rotation = null, Transform parent = null, DiContainer container = null) =>
+            InstantiateAsync(await _assetsProvider.GetAsset<GameObject>(path), position, rotation, parent, container);
+
+        public async UniTask<GameObject> InstantiateAsync(AssetReference path, Vector3? position = null,
+            Quaternion? rotation = null, Transform parent = null) =>
+            InstantiateAsync(await _assetsProvider.GetAsset<GameObject>(path), position, rotation, parent);
+
+        public async UniTask<T> InstantiateAndGetComponent<T>(string path, Vector3? position = null,
+            Quaternion? rotation = null, Transform parent = null) where T : class =>
+            (await InstantiateAsync(path, position, rotation, parent)).GetComponent<T>();
+
+        public async UniTask<T> InstantiateAndGetComponent<T>(AssetReference path, Vector3? position = null,
+            Quaternion? rotation = null, Transform parent = null) where T : class =>
+            (await InstantiateAsync(path, position, rotation, parent)).GetComponent<T>();
+
+        public void Destroy(GameObject gameObject) => Object.Destroy(gameObject);
+
+        private GameObject InstantiateAsync(GameObject prefab = null, Vector3? pos = null, Quaternion? rot = null,
+            Transform parent = null, DiContainer container = null)
+        {
+            var containerToUse = container ?? _globalContainer;
+            var obj = containerToUse.InstantiatePrefab(prefab, pos ?? Vector3.zero, rot ?? Quaternion.identity, parentTransform: null);
+            if (container != null) obj.transform.SetParent(parent);
+
+            return obj;
+        }
+    }
+}
+
+// ===== Infrastructure/Factories/Objects/GameObjectFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: e3fc3ade82af4c8296e1f43037a8d627
+timeCreated: 1769390229
+
+// ===== Infrastructure/Factories/Objects/IGameObjectFactory.cs =====
+﻿using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+using Zenject;
+
+namespace Infrastructure.Factories.Objects
+{
+    public interface IGameObjectFactory
+    {
+        UniTask<GameObject> InstantiateAsync(
+            string path,
+            Vector3? position = null,
+            Quaternion? rotation = null,
+            Transform parent = null,
+            DiContainer container = null
+        );
+
+        UniTask<GameObject> InstantiateAsync(
+            AssetReference path,
+            Vector3? position = null,
+            Quaternion? rotation = null,
+            Transform parent = null
+        );
+
+        UniTask<T> InstantiateAndGetComponent<T>(
+            string path,
+            Vector3? position = null,
+            Quaternion? rotation = null,
+            Transform parent = null
+        ) where T : class;
+
+        UniTask<T> InstantiateAndGetComponent<T>(
+            AssetReference path,
+            Vector3? position = null,
+            Quaternion? rotation = null,
+            Transform parent = null
+        ) where T : class;
+
+        void Destroy(GameObject gameObject);
+    }
+}
+
+// ===== Infrastructure/Factories/Objects/IGameObjectFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 7896d5a8a4f845068f238b9ca4f64eda
+timeCreated: 1769390170
+
+// ===== Infrastructure/Factories/States.meta =====
+﻿fileFormatVersion: 2
+guid: 056e8c91fbf2436eab694ecbc475094f
+timeCreated: 1769389638
+
+// ===== Infrastructure/Factories/States/IStateFactory.cs =====
+﻿using Core.BaseStates;
+
+namespace Infrastructure.Factories.States
+{
+    public interface IStateFactory
+    {
+        IState CreateState<TState>() where TState : IState;
+    }
+}
+
+// ===== Infrastructure/Factories/States/IStateFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 3fead78b712b4bd88fd176ba10e9f560
+timeCreated: 1769389647
+
+// ===== Infrastructure/Factories/States/StateFactory.cs =====
+﻿using Core.BaseStates;
+using Zenject;
+
+namespace Infrastructure.Factories.States
+{
+    public class StateFactory : IStateFactory
+    {
+        private readonly DiContainer _container;
+
+        public StateFactory(DiContainer container)
+        {
+            _container = container;
+        }
+
+        public IState CreateState<TState>() where TState : IState =>
+            _container.Instantiate<TState>();
+    }
+}
+
+// ===== Infrastructure/Factories/States/StateFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 005899d97a274062a36743fa5b8599a0
+timeCreated: 1769389656
+
+// ===== Infrastructure/Factories/UI.meta =====
+﻿fileFormatVersion: 2
+guid: 4b23c8448c3f400f9e9030fa61c464d9
+timeCreated: 1769390294
+
+// ===== Infrastructure/Factories/UI/IUIFactory.cs =====
+﻿using System.Threading.Tasks;
+using Infrastructure.Services;
+using UnityEngine;
+using Zenject;
+
+namespace Infrastructure.Factories.UI
+{
+    public interface IUIFactory
+    {
+        Task<GameObject> CreateScreen(string assetAddress, WindowID windowId);
+        T GetScreenComponent<T>(WindowID windowId) where T : Component;
+        void DestroyScreen(WindowID windowId);
+        bool Exists(WindowID windowId);
+    }
+}
+
+// ===== Infrastructure/Factories/UI/IUIFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: ab5eddc1a82e4db9886953e0ebd3cfa8
+timeCreated: 1769390311
+
+// ===== Infrastructure/Factories/UI/UIFactory.cs =====
+﻿using System.Collections.Generic;
+using System.Threading.Tasks;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Services;
+using UnityEngine;
+using Zenject;
+
+namespace Infrastructure.Factories.UI
+{
+    public class UIFactory : IUIFactory
+    {
+        private readonly IGameObjectFactory _gameObjectFactory;
+        private readonly Dictionary<WindowID, GameObject> _screenInstances = new();
+
+        public UIFactory(
+            IGameObjectFactory gameObjectFactory
+        )
+        {
+            _gameObjectFactory = gameObjectFactory;
+        }
+
+        public async Task<GameObject> CreateScreen(string assetAddress, WindowID windowId)
+        {
+            if (_screenInstances.ContainsKey(windowId))
+            {
+                Debug.LogWarning($"Screen with WindowID {windowId} already exists.. " +
+                                 $"Swapping screens.");
+
+                DestroyScreen(windowId);
+            }
+
+            var instance = await _gameObjectFactory.InstantiateAsync(assetAddress);
+
+            if (_screenInstances.TryAdd(windowId, instance))
+            {
+                return instance;
+            }
+
+            Object.Destroy(instance);
+            return null;
+        }
+
+        public T GetScreenComponent<T>(WindowID windowId) where T : Component
+        {
+            if (_screenInstances.TryGetValue(windowId, out var screenObject))
+            {
+                var screenComponent = screenObject.GetComponent<T>();
+                if (screenComponent != null)
+                {
+                    return screenComponent;
+                }
+
+                Debug.LogError($"Component of screen by type {typeof(T)} not found.");
+                return null;
+            }
+
+            Debug.LogError($"Screen with WindowID {windowId} not found.");
+            return null;
+        }
+
+        public void DestroyScreen(WindowID windowId)
+        {
+            if (!_screenInstances.Remove(windowId, out var screenObject))
+            {
+                Debug.LogWarning($"Screen with WindowID {windowId} not found");
+                return;
+            }
+
+            _gameObjectFactory.Destroy(screenObject);
+        }
+
+        public bool Exists(WindowID windowId) => _screenInstances.ContainsKey(windowId);
+    }
+}
+
+// ===== Infrastructure/Factories/UI/UIFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: c7300246afc242699840a4b3fb144838
+timeCreated: 1769390335
+
+// ===== Infrastructure/Installers.meta =====
+fileFormatVersion: 2
+guid: 55810387c907edc41839f52ed0894e7a
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Infrastructure/Installers/BootstrapInstaller.cs =====
+﻿using Zenject;
+
+namespace Infrastructure.Installers
+{
+    public class BootstrapInstaller : MonoInstaller
+    {
+        public override void InstallBindings()
+        {
+            Container.Bind<BootstrapLoader>().AsSingle().NonLazy();
+
+            Container.Bind<IInitializable>().To<BootstrapLoader>().FromResolve();
+        }
+    }
+}
+
+// ===== Infrastructure/Installers/BootstrapInstaller.cs.meta =====
+﻿fileFormatVersion: 2
+guid: fae07a79ec904afdb2d204e8f38b6fbd
+timeCreated: 1769386805
+
+// ===== Infrastructure/Installers/GameInstaller.cs =====
+﻿using Core.BaseStates;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Factories.States;
+using Infrastructure.Factories.UI;
+using Infrastructure.Providers.AssetsAddressables;
+using Infrastructure.Services.Scene;
+using Infrastructure.Services.UI;
+using Infrastructure.Services.Window;
+using Zenject;
+
+namespace Infrastructure.Installers
+{
+    public class GameInstaller : MonoInstaller
+    {
+        public override void InstallBindings()
+        {
+            BindServices();
+            BindProviders();
+            BindFactories();
+            BindObservers();
+        }
+
+        private void BindServices()
+        {
+            Container.Bind<StateMachine>().AsSingle();
+            Container.Bind<ISceneLoaderService>().To<SceneLoaderService>().AsSingle();
+            Container.Bind<IWindowService>().To<WindowService>().AsSingle();
+        }
+
+        private void BindProviders()
+        {
+            Container.Bind<IAssetsAddressablesProvider>().To<AssetsAddressablesProvider>().AsSingle();
+        }
+
+        private void BindFactories()
+        {
+            Container.Bind<IStateFactory>().To<StateFactory>().AsSingle();
+            Container.Bind<IUIFactory>().To<UIFactory>().AsSingle();
+            Container.Bind<IGameObjectFactory>().To<GameObjectFactory>().AsSingle();
+        }
+
+        private void BindObservers()
+        {
+            
+        }
+    }
+}
+
+// ===== Infrastructure/Installers/GameInstaller.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 789ff086d7ba4e63b9bbcf8acce1c6a8
+timeCreated: 1769386879
+
+// ===== Infrastructure/Providers.meta =====
+fileFormatVersion: 2
+guid: 080314ab683dc0041932f6b22f54235e
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Infrastructure/Providers/AssetsAddressables.meta =====
+﻿fileFormatVersion: 2
+guid: a581be64dd554d4096b4db057ad75a00
+timeCreated: 1769389783
+
+// ===== Infrastructure/Providers/AssetsAddressables/AssetsAddressablesProvider.cs =====
+﻿#region
+
+using System.Collections.Generic;
+using System.Linq;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
+using Zenject;
+
+#endregion
+
+namespace Infrastructure.Providers.AssetsAddressables
+{
+    public class AssetsAddressablesProvider : IAssetsAddressablesProvider
+    {
+        private readonly Dictionary<string, AsyncOperationHandle> _completedOperations = new();
+        private readonly Dictionary<string, List<AsyncOperationHandle>> _handles = new();
+
+        public void Initialize()
+        {
+            Addressables.InitializeAsync();
+        }
+
+        public async UniTask<T> GetAsset<T>(string address) where T : Object =>
+            _completedOperations.TryGetValue(address, out var completed)
+                ? completed.Result as T
+                : await RunWinCacheOnComplete(Addressables.LoadAssetAsync<T>(address), address);
+
+        public async UniTask<T> GetAsset<T>(AssetReference assetReference) where T : Object =>
+            _completedOperations.TryGetValue(assetReference.AssetGUID, out var completed)
+                ? completed.Result as T
+                : await RunWinCacheOnComplete(Addressables.LoadAssetAsync<T>(assetReference), assetReference.AssetGUID);
+
+        public async UniTask<List<T>> GetAssets<T>(IEnumerable<string> addresses) where T : Object
+        {
+            var loadTasks = addresses.Select(address => _completedOperations.TryGetValue(address, out var completed)
+                ? UniTask.FromResult(completed.Result as T)
+                : RunWinCacheOnComplete(Addressables.LoadAssetAsync<T>(address), address)).ToList();
+
+            return (await UniTask.WhenAll(loadTasks)).ToList();
+        }
+
+        public void CleanUp()
+        {
+            foreach (var handle in _handles.Values.SelectMany(resourceHandles => resourceHandles))
+            {
+                Addressables.Release(handle);
+            }
+
+            _handles.Clear();
+            _completedOperations.Clear();
+        }
+
+        private async UniTask<T> RunWinCacheOnComplete<T>(AsyncOperationHandle<T> handle, string cacheKey) where T : Object
+        {
+            handle.Completed += h => { _completedOperations[cacheKey] = h; };
+
+            AddHandle(cacheKey, handle);
+
+            return await handle.Task;
+        }
+
+        private void AddHandle(string key, AsyncOperationHandle handle)
+        {
+            if (!_handles.TryGetValue(key, out var resourceHandles))
+            {
+                resourceHandles = new List<AsyncOperationHandle>();
+                _handles[key] = resourceHandles;
+            }
+
+            resourceHandles.Add(handle);
+        }
+    }
+}
+
+// ===== Infrastructure/Providers/AssetsAddressables/AssetsAddressablesProvider.cs.meta =====
+﻿fileFormatVersion: 2
+guid: e9e9d1ddafc44468b729a3a75020e4fd
+timeCreated: 1769389808
+
+// ===== Infrastructure/Providers/AssetsAddressables/IAssetsAddressablesProvider.cs =====
+﻿using System.Collections.Generic;
+using Cysharp.Threading.Tasks;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+
+namespace Infrastructure.Providers.AssetsAddressables
+{
+    public interface IAssetsAddressablesProvider
+    {
+        UniTask<T> GetAsset<T>(string address) where T : Object;
+        UniTask<T> GetAsset<T>(AssetReference assetReference) where T : Object;
+        UniTask<List<T>> GetAssets<T>(IEnumerable<string> addresses) where T : Object;
+        void CleanUp();
+    }
+}
+
+// ===== Infrastructure/Providers/AssetsAddressables/IAssetsAddressablesProvider.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 36c404e05b3f40d7a64aa9d6c85227c5
+timeCreated: 1769389850
+
+// ===== Infrastructure/Services.meta =====
+fileFormatVersion: 2
+guid: f47fd43eb6ff7be489ddf284a5550006
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== Infrastructure/Services/Scene.meta =====
+﻿fileFormatVersion: 2
+guid: 56903024aa46492bbf621dcc021b9dd6
+timeCreated: 1769388645
+
+// ===== Infrastructure/Services/Scene/ISceneLoaderService.cs =====
+﻿using Cysharp.Threading.Tasks;
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
+
+namespace Infrastructure.Services.Scene
+{
+    public interface ISceneLoaderService
+    {
+        UniTask<SceneInstance> LoadScene(string sceneName,
+            LoadSceneMode loadSceneMode = LoadSceneMode.Additive, bool activatedOnLoad = true);
+    }
+}
+
+// ===== Infrastructure/Services/Scene/ISceneLoaderService.cs.meta =====
+fileFormatVersion: 2
+guid: f066cf9237d2cf843990bf6d15639aa6
+
+// ===== Infrastructure/Services/Scene/SceneLoaderService.cs =====
+﻿using Cysharp.Threading.Tasks;
+using UnityEngine.AddressableAssets;
+using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.ResourceManagement.ResourceProviders;
+using UnityEngine.SceneManagement;
+
+namespace Infrastructure.Services.Scene
+{
+    public class SceneLoaderService : ISceneLoaderService
+    {
+        public async UniTask<SceneInstance> LoadScene(string sceneName, 
+            LoadSceneMode loadSceneMode = LoadSceneMode.Additive, bool activatedOnLoad = true)
+        {
+            var loadSceneAsync = Addressables.LoadSceneAsync(sceneName, loadSceneMode, activatedOnLoad);
+
+            await MonitorLoadProgress(loadSceneAsync);
+
+            return loadSceneAsync.Result;
+        }
+        
+        private static async UniTask MonitorLoadProgress(AsyncOperationHandle<SceneInstance> loadOperation)
+        {
+            while (!loadOperation.IsDone)
+            {
+                await UniTask.Yield();
+            }
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Scene/SceneLoaderService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 444ce7bfbe004c07a16170391ea1799c
+timeCreated: 1769389155
+
+// ===== Infrastructure/Services/UI.meta =====
+﻿fileFormatVersion: 2
+guid: de34ecff1e42408bab94e672f0256031
+timeCreated: 1769390401
+
+// ===== Infrastructure/Services/UI/IWindowService.cs =====
+﻿using System.Threading.Tasks;
+using UnityEngine;
+
+namespace Infrastructure.Services.Window
+{
+    public interface IWindowService
+    {
+        Task Open(WindowID windowID);
+        Task<T> OpenAndGet<T>(WindowID windowID) where T : Component;
+        T Get<T>(WindowID windowID) where T : Component;
+        void Close(WindowID windowID);
+        bool IsWindowOpened(WindowID windowID);
+    }
+}
+
+// ===== Infrastructure/Services/UI/IWindowService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: e9c3ecc3de754374a7b87a69d4e631a5
+timeCreated: 1769390422
+
+// ===== Infrastructure/Services/UI/WindowID.cs =====
+﻿namespace Infrastructure.Services
+{
+    public enum WindowID
+    {
+        None = -1,
+        Unknown = 0,
+        MainMenu = 2,
+        Loading = 3,
+        HUD = 4,
+    }
+}
+
+// ===== Infrastructure/Services/UI/WindowID.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 1726b9c4465d45a09919521347b1d567
+timeCreated: 1769390535
+
+// ===== Infrastructure/Services/UI/WindowService.cs =====
+﻿using System.Threading.Tasks;
+using Data.Paths;
+using Infrastructure.Factories.UI;
+using Infrastructure.Services.Window;
+using UnityEngine;
+
+namespace Infrastructure.Services.UI
+{
+    public class WindowService : IWindowService
+    {
+        private readonly IUIFactory _uiFactory;
+
+        public WindowService(IUIFactory uiFactory)
+        {
+            _uiFactory = uiFactory;
+        }
+
+        public bool IsWindowOpened(WindowID windowID) => _uiFactory.Exists(windowID);
+
+        public async Task Open(WindowID windowID)
+        {
+            var path = GetWindowsPath(windowID);
+            if (string.IsNullOrEmpty(path))
+            {
+                Debug.LogError($"[WindowService] Path not found for ID: {windowID}");
+                return;
+            }
+            await _uiFactory.CreateScreen(path, windowID);
+        }
+
+        public async Task<T> OpenAndGet<T>(WindowID windowID) where T : Component
+        {
+            await Open(windowID);
+            return _uiFactory.GetScreenComponent<T>(windowID);
+        }
+
+        public T Get<T>(WindowID windowID) where T : Component => 
+            _uiFactory.GetScreenComponent<T>(windowID);
+
+        public void Close(WindowID windowID) => _uiFactory.DestroyScreen(windowID);
+
+        private string GetWindowsPath(WindowID windowID) => windowID switch
+        {
+            WindowID.Loading => UIPaths.LOADING_SCREEN,
+            WindowID.MainMenu => UIPaths.MAIN_MENU,
+            WindowID.HUD => UIPaths.HUD,
+            _ => null
+        };
+    }
+}
+
+// ===== Infrastructure/Services/UI/WindowService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: a3165a97e39840c58f1cc3fe86ca8918
+timeCreated: 1769390415
+
+// ===== Physics.meta =====
+fileFormatVersion: 2
+guid: 59ee1b769c7e49046b803434c9b0e204
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+
+
+// ===== UI.meta =====
+﻿fileFormatVersion: 2
+guid: c9d66a54e60d45f294f0803836975431
+timeCreated: 1769389414
+
