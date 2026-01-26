@@ -6,12 +6,14 @@ using Infrastructure.Factories.UI;
 using Infrastructure.Providers.AssetsAddressables;
 using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Camera;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.FPS;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
 using Infrastructure.Services.Lanes;
 using Infrastructure.Services.Physics;
+using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.UI;
 using Infrastructure.Services.Waves;
@@ -58,6 +60,8 @@ namespace Infrastructure.Installers
             Container.BindInterfacesAndSelfTo<WaveService>().AsSingle();
             
             Container.BindInterfacesAndSelfTo<EconomyService>().AsSingle();
+            Container.Bind<ICameraService>().To<CameraService>().AsSingle();
+            Container.BindInterfacesAndSelfTo<PlantingService>().AsSingle();
         }
 
         private void BindFactories()

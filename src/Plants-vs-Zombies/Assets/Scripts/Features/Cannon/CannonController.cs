@@ -1,14 +1,15 @@
-﻿using Infrastructure.Factories.Objects;
+﻿using Cysharp.Threading.Tasks;
+using Data.Configs;
+using Infrastructure.Factories.Objects;
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 using Zenject;
 
 namespace Features.Cannon
 {
     /// <summary>
-    /// Controls static plant rotation (WASD) and firing (Space).
+    /// Controls static plant rotation and firing using injected data.
     /// </summary>
     public class CannonController : MonoBehaviour
     {
@@ -17,32 +18,15 @@ namespace Features.Cannon
         [SerializeField] private Transform _horizontalAxis;
         [SerializeField] private Transform _verticalAxis;
         [SerializeField] private TrajectoryVisualizer _visualizer;
-        
-        [Header("Settings")]
-        [SerializeField] private AssetReference _projectileAsset;
-        [SerializeField] private float _rotationSpeed = 45f;
-        [SerializeField] private float _initialSpeed = 20f;
-
-        [SerializeField] private float _minPitch = -10f;
-        [SerializeField] private float _maxPitch = 45f;
-        [SerializeField] private float _minYaw = -45f;
-        [SerializeField] private float _maxYaw = 45f;
-        
-        [Header("Physics Config")]
-        [SerializeField] private float _mass = 2f;
-        [SerializeField] private float _radius = 0.2f;
-        [SerializeField] private float _dragCoeff = 0.47f;
-        [SerializeField] private float _airDensity = 1.225f;
-        [SerializeField] private Vector3 _wind = Vector3.zero;
-        
-        [Header("Camera")]
         [SerializeField] private Transform _cameraMountPoint; 
+        
         public Transform CameraMountPoint => _cameraMountPoint;
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
-        private bool _isActive;
-
+        private PlantData _config;
+        
+        private bool _isPossessed;
         private float _currentYaw;
         private float _currentPitch;
 
@@ -53,10 +37,15 @@ namespace Features.Cannon
             _factory = factory;
         }
 
+        public void Initialize(PlantData config)
+        {
+            _config = config;
+        }
+
         private void Start()
         {
-            _isActive = true; 
             _inputService.OnFirePerformed += HandleFireInput;
+            SetPossessed(false);
         }
 
         private void OnDestroy()
@@ -67,7 +56,7 @@ namespace Features.Cannon
 
         private void Update()
         {
-            if (!_isActive) return;
+            if (!_isPossessed || _config == null) return;
 
             HandleAiming();
             UpdateTrajectory();
@@ -75,13 +64,8 @@ namespace Features.Cannon
         
         public void SetPossessed(bool isPossessed)
         {
-            SetControlActive(isPossessed);
-        }
-
-        public void SetControlActive(bool isActive)
-        {
-            _isActive = isActive;
-            if (!_isActive)
+            _isPossessed = isPossessed;
+            if (!_isPossessed)
             {
                 _visualizer.Clear();
             }
@@ -93,40 +77,41 @@ namespace Features.Cannon
 
             if (input.sqrMagnitude > Mathf.Epsilon)
             {
-                float yawDelta = input.x * _rotationSpeed * Time.deltaTime;
-                _currentYaw = Mathf.Clamp(_currentYaw + yawDelta, _minYaw, _maxYaw);
+                float yawDelta = input.x * _config.rotationSpeed * Time.deltaTime;
+                _currentYaw = Mathf.Clamp(_currentYaw + yawDelta, _config.minYaw, _config.maxYaw);
                 _horizontalAxis.localRotation = Quaternion.Euler(0, _currentYaw, 0);
                 
-                float pitchDelta = -input.y * _rotationSpeed * Time.deltaTime; 
-                _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _minPitch, _maxPitch);
+                float pitchDelta = -input.y * _config.rotationSpeed * Time.deltaTime; 
+                _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _config.minPitch, _config.maxPitch);
                 _verticalAxis.localRotation = Quaternion.Euler(_currentPitch, 0, 0);
             }
         }
 
         private void UpdateTrajectory()
         {
-            Vector3 startVel = _muzzle.forward * _initialSpeed;
-            _visualizer.SimulateTrajectory(_muzzle.position, startVel, _mass, _radius, _dragCoeff, _airDensity, _wind);
+            Vector3 startVel = _muzzle.forward * _config.initialSpeed;
+            _visualizer.SimulateTrajectory(_muzzle.position, startVel, _config.projectileMass, 
+                _config.projectileRadius, _config.dragCoeff, _config.airDensity, _config.wind);
         }
 
         private void HandleFireInput()
         {
-            if (_isActive)
+            if (_isPossessed && _config != null)
                 Fire();
         }
 
         private async void Fire()
         {
-            float currentMass = Random.Range(_mass * 0.95f, _mass * 1.05f);
+            float currentMass = Random.Range(_config.projectileMass * 0.95f, _config.projectileMass * 1.05f);
 
-            var projectileObj = await _factory.InstantiateAsync(_projectileAsset, _muzzle.position, Quaternion.identity);
-
+            var projectileObj = await _factory.InstantiateAsync(_config.projectileAsset, _muzzle.position, Quaternion.identity);
             var physicsComp = projectileObj.GetComponent<PhysicsProjectile>();
             
             if (physicsComp != null)
             {
-                Vector3 startVel = _muzzle.forward * _initialSpeed;
-                physicsComp.Initialize(currentMass, _radius, _dragCoeff, _airDensity, _wind, startVel);
+                Vector3 startVel = _muzzle.forward * _config.initialSpeed;
+                physicsComp.Initialize(currentMass, _config.projectileRadius, _config.dragCoeff, 
+                    _config.airDensity, _config.wind, startVel);
             }
         }
     }

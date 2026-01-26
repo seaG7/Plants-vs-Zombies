@@ -1,4 +1,6 @@
-﻿using Data.Enums;
+﻿using System;
+using Data.Enums;
+using Features.Cannon;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.StaticData;
 using Infrastructure.Services.Economy;
@@ -9,7 +11,7 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
-    public class PlantingService : IPlantingService, IInitializable, System.IDisposable
+    public class PlantingService : IPlantingService, IInitializable, IDisposable
     {
         private readonly IInputService _inputService;
         private readonly IGridService _gridService;
@@ -35,14 +37,12 @@ namespace Infrastructure.Services.Planting
 
         public void Initialize()
         {
-            _inputService.OnClickPerformed += TryPlantAtCursor;
             _inputService.OnHotbarHotkeyPressed += OnHotbarPressed;
             _inputService.OnCancelPerformed += Deselect;
         }
 
         public void Dispose()
         {
-            _inputService.OnClickPerformed -= TryPlantAtCursor;
             _inputService.OnHotbarHotkeyPressed -= OnHotbarPressed;
             _inputService.OnCancelPerformed -= Deselect;
         }
@@ -72,25 +72,27 @@ namespace Infrastructure.Services.Planting
             if (plantData == null) return;
 
             Vector2 mousePos = _inputService.GetPointerPosition();
-            Ray ray = Camera.main.ScreenPointToRay(mousePos);
+            Ray ray = UnityEngine.Camera.main.ScreenPointToRay(mousePos);
 
             if (UnityEngine.Physics.Raycast(ray, out RaycastHit hit, 1000f, LayerMask.GetMask("Default", "Ground")))
             {
                 if (_gridService.WorldToGrid(hit.point, out int lane, out int row))
                 {
-                    if (_gridService.IsCellOccupied(lane, row))
-                    {
-                        Debug.Log("Cell Occupied!");
-                        return;
-                    }
+                    if (_gridService.IsCellOccupied(lane, row)) return;
 
                     if (_economyService.TrySpendSun(plantData.cost))
                     {
                         Vector3 buildPos = _gridService.GridToWorld(lane, row);
                         GameObject plantObj = await _factory.InstantiateAsync(plantData.prefabReference, buildPos, Quaternion.identity);
+
+                        var cannon = plantObj.GetComponent<CannonController>();
+                        if (cannon != null)
+                        {
+                            cannon.Initialize(plantData);
+                        }
                         
                         _gridService.TryOccupyCell(lane, row, plantObj);
-                        
+
                         _selectedPlantType = PlantType.None; 
                     }
                     else

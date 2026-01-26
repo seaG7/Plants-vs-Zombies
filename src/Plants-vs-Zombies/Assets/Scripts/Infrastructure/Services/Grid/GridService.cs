@@ -22,6 +22,7 @@ namespace Infrastructure.Services.Grid
             laneIndex = -1;
             rowIndex = -1;
             var level = _levelProvider.CurrentLevel;
+            if (level == null) return false;
 
             Vector3 localPos = Quaternion.Inverse(level.OriginRotation) * (worldPos - level.OriginPosition);
 
@@ -55,6 +56,12 @@ namespace Infrastructure.Services.Grid
         }
 
         public bool IsCellOccupied(int lane, int row) => _occupiedCells.ContainsKey(new Vector2Int(lane, row));
+
+        public GameObject GetPlantAt(int lane, int row)
+        {
+            var key = new Vector2Int(lane, row);
+            return _occupiedCells.TryGetValue(key, out var plant) ? plant : null;
+        }
 
         public bool TryOccupyCell(int lane, int row, GameObject plant)
         {

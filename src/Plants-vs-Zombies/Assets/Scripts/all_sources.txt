@@ -127,6 +127,30 @@ namespace Core.BaseStates
 guid: 5244f7e346744975988b549cc9d36cc2
 timeCreated: 1769387410
 
+// ===== Core/Interfaces.meta =====
+﻿fileFormatVersion: 2
+guid: b72ac7fddf4449a8b94bc4f713325eda
+timeCreated: 1769447022
+
+// ===== Core/Interfaces/IDamageable.cs =====
+﻿using System;
+
+namespace Core.Interfaces
+{
+    public interface IDamageable
+    {
+        bool IsAlive { get; }
+        void TakeDamage(float damage);
+        event Action OnDeath;
+        event Action<float> OnHealthChanged;
+    }
+}
+
+// ===== Core/Interfaces/IDamageable.cs.meta =====
+﻿fileFormatVersion: 2
+guid: e697d4c3315543b59e95611b40a6d201
+timeCreated: 1769447033
+
 // ===== Core/States.meta =====
 ﻿fileFormatVersion: 2
 guid: 0c7582c8c2ac4af7bde2a19d314265e2
@@ -164,6 +188,53 @@ namespace Core.States
 guid: e21bfc6eb8e64e01b20c99f5c07914ea
 timeCreated: 1769388269
 
+// ===== Core/States/GameplayState.cs =====
+﻿using Core.BaseStates;
+using Infrastructure.Services;
+using Infrastructure.Services.Input;
+using Infrastructure.Services.Waves;
+using Infrastructure.Services.Window;
+
+namespace Core.States
+{
+    /// <summary>
+    /// State responsible for the active gameplay loop.
+    /// </summary>
+    public class GameplayState : IState, IEnterable, IExitable
+    {
+        private readonly IWindowService _windowService;
+        private readonly IInputService _inputService;
+        private readonly IWaveService _waveService;
+
+        public GameplayState(IWindowService windowService, IInputService inputService, IWaveService waveService)
+        {
+            _windowService = windowService;
+            _inputService = inputService;
+            _waveService = waveService;
+        }
+
+        public async void Enter()
+        {
+            await _windowService.Open(WindowID.HUD);
+            
+            _inputService.Enable();
+            
+            _waveService.StartLevel();
+        }
+
+        public void Exit()
+        {
+            _windowService.Close(WindowID.HUD);
+            _inputService.Disable();
+        }
+    }
+}
+
+// ===== Core/States/GameplayState.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 523c58421ffd4175905262ae58391237
+timeCreated: 1769444865
+
 // ===== Core/States/MainMenuState.cs =====
 ﻿using Core.BaseStates;
 using Cysharp.Threading.Tasks;
@@ -177,17 +248,21 @@ namespace Core.States
     {
         private readonly ISceneLoaderService _sceneLoader;
         private object _sceneInstance;
+        private readonly StateMachine _stateMachine;
 
-        public MainMenuState(ISceneLoaderService sceneLoader)
+        public MainMenuState(ISceneLoaderService sceneLoader, StateMachine stateMachine)
         {
             _sceneLoader = sceneLoader;
+            _stateMachine = stateMachine;
         }
 
-        public void Enter()
+        public async void Enter()
         {
-            _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
             
-            _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
+            _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
+            
+            _stateMachine.ChangeState<GameplayState>();
         }
 
         public void Exit()
@@ -213,10 +288,244 @@ DefaultImporter:
   assetBundleVariant: 
 
 
+// ===== Data/Configs.meta =====
+﻿fileFormatVersion: 2
+guid: 6118a0539e2645b688f403ed690f45b4
+timeCreated: 1769457716
+
+// ===== Data/Configs/EnemyData.cs =====
+﻿using System.Collections.Generic;
+using Data.Enums;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+
+namespace Data.Configs
+{
+    [CreateAssetMenu(fileName = "NewEnemyData", menuName = "Configs/Enemy Data")]
+    public class EnemyData : ScriptableObject
+    {
+        [Header("General Info")]
+        public int id;
+        public EnemyType type;
+        public string enemyName;
+        
+        [Header("Visuals")]
+        public AssetReferenceGameObject prefabReference;
+
+        [Header("Stats")]
+        public float maxHealth = 100f;
+        public float moveSpeed = 1.5f;
+        public float damage = 10f;
+        public int killReward = 10;
+
+#if UNITY_EDITOR
+        private void Reset()
+        {
+            AssignUniqueId();
+        }
+
+        [ContextMenu("Recalculate ID")]
+        private void AssignUniqueId()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:EnemyData");
+            HashSet<int> usedIds = new HashSet<int>();
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                EnemyData data = AssetDatabase.LoadAssetAtPath<EnemyData>(path);
+                if (data != null && data != this) usedIds.Add(data.id);
+            }
+
+            int nextId = 1;
+            while (usedIds.Contains(nextId)) nextId++;
+
+            if (id != nextId)
+            {
+                id = nextId;
+                EditorUtility.SetDirty(this);
+            }
+        }
+#endif
+    }
+}
+
+// ===== Data/Configs/EnemyData.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 7152c193f5c74d74808709a7c59c2792
+timeCreated: 1769458679
+
+// ===== Data/Configs/LevelData.cs =====
+﻿using System;
+using System.Collections.Generic;
+using Data.Enums;
+using UnityEngine;
+
+namespace Data.Configs
+{
+    [CreateAssetMenu(fileName = "LevelData", menuName = "Configs/LevelData")]
+    public class LevelData : ScriptableObject
+    {
+        [Header("Economy Settings")]
+        public EconomySettings economy;
+
+        [Header("Waves Settings")]
+        public List<WaveInfo> waves;
+    }
+
+    [Serializable]
+    public class EconomySettings
+    {
+        public int startingSun = 50;
+        
+        public float passiveIncomeInterval = 5.0f;
+
+        public int passiveIncomeAmount = 25;
+    }
+  
+    [Serializable]
+    public class WaveInfo
+    {
+        [Tooltip("Delay before this wave starts")]
+        public float startDelay = 5f;
+        public List<WaveGroup> groups;
+    }
+
+    [Serializable]
+    public class WaveGroup
+    {
+        public EnemyType enemyType;
+        public int count = 5;
+        public float spawnInterval = 2f;
+    }
+}
+
+// ===== Data/Configs/LevelData.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 4d2dc72ad6c249798e2d1bd66eb00b22
+timeCreated: 1769460745
+
+// ===== Data/Configs/PlantData.cs =====
+﻿using System.Collections.Generic;
+using Data.Enums;
+using UnityEditor;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+
+namespace Data.Configs
+{
+    [CreateAssetMenu(fileName = "NewPlantData", menuName = "Configs/Plant Data")]
+    public class PlantData : ScriptableObject
+    {
+        [Header("General Info")]
+        [Tooltip("Unique ID auto-generated")]
+        public int id;
+        public PlantType type;
+        public string plantName;
+        [TextArea] public string description;
+
+        [Header("Visuals")]
+        public Sprite icon;
+        public AssetReferenceGameObject prefabReference;
+
+        [Header("Economy")]
+        [Min(0)] public int cost;
+        [Tooltip("Cooldown in seconds between planting")]
+        public float cooldown = 5f;
+
+        [Header("Combat Stats")]
+        public float health = 100f;
+        public float attackRange = 10f;
+        public float attackRate = 1.5f;
+
+#if UNITY_EDITOR
+        private void Reset()
+        {
+            AssignUniqueId();
+        }
+
+        [ContextMenu("Recalculate ID")]
+        private void AssignUniqueId()
+        {
+            string[] guids = AssetDatabase.FindAssets("t:PlantData");
+            HashSet<int> usedIds = new HashSet<int>();
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                PlantData data = AssetDatabase.LoadAssetAtPath<PlantData>(path);
+                if (data != null && data != this) usedIds.Add(data.id);
+            }
+
+            int nextId = 1;
+            while (usedIds.Contains(nextId)) nextId++;
+
+            if (id != nextId)
+            {
+                id = nextId;
+                EditorUtility.SetDirty(this);
+            }
+        }
+#endif
+    }
+}
+
+// ===== Data/Configs/PlantData.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 87c5348046e3464d8fd1b23877a11936
+timeCreated: 1769457936
+
+// ===== Data/Enums.meta =====
+﻿fileFormatVersion: 2
+guid: d4d24d93a5a14538ba1c4fcc211deafe
+timeCreated: 1769458557
+
+// ===== Data/Enums/GameEnums.cs =====
+﻿namespace Data.Enums
+{
+    public enum PlantType
+    {
+        None = 0,
+        CoconutCannon = 1,
+        Peashooter = 2,
+    }
+
+    public enum EnemyType
+    {
+        None = 0,
+        BasicZombie = 1,
+        BucketHead = 2,
+    }
+}
+
+// ===== Data/Enums/GameEnums.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 9b2fde75636b432eaa3b4a83f1f52210
+timeCreated: 1769458571
+
 // ===== Data/Path.meta =====
 ﻿fileFormatVersion: 2
 guid: cbc27d895e32417eb0e7f6e425145408
 timeCreated: 1769389303
+
+// ===== Data/Path/ConfigPaths.cs =====
+﻿namespace Data.Path
+{
+    public static class ConfigsPath
+    {
+        public const string PLANTS_PATH = "Configs/Plants";
+        public const string ENEMIES_PATH = "Configs/Enemies";
+        public const string LEVEL_PATH = "Configs/Level"; 
+    }
+}
+
+// ===== Data/Path/ConfigPaths.cs.meta =====
+﻿fileFormatVersion: 2
+guid: aeb791f836eb44d4bb6b4c7f4c6c3316
+timeCreated: 1769458767
 
 // ===== Data/Path/ScenePaths.cs =====
 ﻿namespace Data.Path
@@ -304,6 +613,10 @@ namespace Features.Cannon
         [SerializeField] private float _dragCoeff = 0.47f;
         [SerializeField] private float _airDensity = 1.225f;
         [SerializeField] private Vector3 _wind = Vector3.zero;
+        
+        [Header("Camera")]
+        [SerializeField] private Transform _cameraMountPoint; 
+        public Transform CameraMountPoint => _cameraMountPoint;
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
@@ -337,6 +650,11 @@ namespace Features.Cannon
 
             HandleAiming();
             UpdateTrajectory();
+        }
+        
+        public void SetPossessed(bool isPossessed)
+        {
+            SetControlActive(isPossessed);
         }
 
         public void SetControlActive(bool isActive)
@@ -398,6 +716,258 @@ namespace Features.Cannon
 guid: a654050ffaf545499ba401e4bc37d889
 timeCreated: 1769440048
 
+// ===== Features/Context.meta =====
+﻿fileFormatVersion: 2
+guid: a05b02b8ce0c43cd84c119784f11db23
+timeCreated: 1769451114
+
+// ===== Features/Context/LevelContext.cs =====
+﻿using System.Collections.Generic;
+using Core.Interfaces;
+using Infrastructure.Providers.Context;
+using UnityEngine;
+using Zenject;
+
+namespace Features.Context
+{
+    /// <summary>
+    /// Holds configuration for the current level's layout, dimensions and grid visualization.
+    /// </summary>
+    public class LevelContext : MonoBehaviour
+    {
+        [Header("Anchors")]
+        [SerializeField] private Transform _originPoint;
+
+        [Header("Dimensions")]
+        [SerializeField] private int _laneCount = 5;
+        [SerializeField] private float _laneWidth = 2.0f;
+        [SerializeField] private float _cellLength = 2.0f;
+        [SerializeField] private float _zombieSpawnDistance = 50f;
+
+        [Header("Grid Config")]
+        [SerializeField] private int _rowsCount = 1;
+
+        private ILevelProvider _levelProvider;
+        
+        private readonly List<IDamageable> _activeEnemies = new();
+
+        public Vector3 OriginPosition => _originPoint != null ? _originPoint.position : transform.position;
+        public Quaternion OriginRotation => _originPoint != null ? _originPoint.rotation : transform.rotation;
+        
+        public int LaneCount => _laneCount;
+        public float LaneWidth => _laneWidth;
+        public float CellLength => _cellLength;
+        public int RowsCount => _rowsCount;
+        public float ZombieSpawnDistance => _zombieSpawnDistance;
+
+        public IReadOnlyList<IDamageable> ActiveEnemies => _activeEnemies;
+        
+        [Header("Camera")]
+        [SerializeField] private Transform _cameraTacticalPoint;
+        public Transform CameraTacticalPoint => _cameraTacticalPoint;
+
+        [Inject]
+        public void Construct(ILevelProvider levelProvider)
+        {
+            _levelProvider = levelProvider;
+        }
+
+        private void Awake()
+        {
+            _levelProvider.SetLevel(this);
+        }
+
+        private void OnDestroy()
+        {
+            _levelProvider.ClearLevel();
+        }
+
+        public void RegisterEnemy(IDamageable enemy)
+        {
+            if (!_activeEnemies.Contains(enemy))
+                _activeEnemies.Add(enemy);
+        }
+
+        public void UnregisterEnemy(IDamageable enemy)
+        {
+            if (_activeEnemies.Contains(enemy))
+                _activeEnemies.Remove(enemy);
+        }
+
+        private void OnDrawGizmos()
+        {
+            Vector3 center = OriginPosition;
+            Quaternion rot = OriginRotation;
+
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(center, 0.3f);
+
+            float totalWidth = _laneCount * _laneWidth;
+            float startX = -totalWidth / 2f;
+            
+            Gizmos.color = Color.cyan;
+            for (int i = 0; i <= _laneCount; i++)
+            {
+                float xOffset = startX + (i * _laneWidth);
+
+                Vector3 startPos = center + rot * new Vector3(xOffset, 0, -_rowsCount * _cellLength);
+                Vector3 endPos = center + rot * new Vector3(xOffset, 0, _zombieSpawnDistance);
+                
+                Gizmos.DrawLine(startPos, endPos);
+            }
+
+            Gizmos.color = Color.yellow;
+            for (int r = 0; r <= _rowsCount; r++)
+            {
+                float zOffset = -(r * _cellLength);
+                
+                Vector3 leftSide = center + rot * new Vector3(startX, 0, zOffset);
+                Vector3 rightSide = center + rot * new Vector3(startX + totalWidth, 0, zOffset);
+                
+                Gizmos.DrawLine(leftSide, rightSide);
+            }
+
+            Gizmos.color = Color.red;
+            for (int i = 0; i < _laneCount; i++)
+            {
+                float centerX = startX + (i * _laneWidth) + (_laneWidth / 2f);
+                Vector3 spawnPos = center + rot * new Vector3(centerX, 0, _zombieSpawnDistance);
+                Gizmos.DrawWireSphere(spawnPos, 0.5f);
+            }
+        }
+    }
+}
+
+// ===== Features/Context/LevelContext.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 649aebd8ae37413e9b038c249bc93a1b
+timeCreated: 1769449726
+
+// ===== Features/Enemy.meta =====
+﻿fileFormatVersion: 2
+guid: 506c2ea77eee49939d8a8e0a62ff7345
+timeCreated: 1769447120
+
+// ===== Features/Enemy/ZombieAnimation.cs =====
+﻿using UnityEngine;
+
+namespace Features.Enemy
+{
+    [RequireComponent(typeof(Animator))]
+    public class ZombieAnimation : MonoBehaviour
+    {
+        private static readonly int IsWalkingHash = Animator.StringToHash("IsWalking");
+        private static readonly int DieHash = Animator.StringToHash("Die");
+
+        private Animator _animator;
+
+        private void Awake()
+        {
+            _animator = GetComponent<Animator>();
+        }
+
+        public void PlayWalk()
+        {
+            _animator.SetBool(IsWalkingHash, true);
+        }
+
+        public void PlayIdle()
+        {
+            _animator.SetBool(IsWalkingHash, false);
+        }
+
+        public void PlayDeath()
+        {
+            _animator.SetTrigger(DieHash);
+        }
+    }
+}
+
+// ===== Features/Enemy/ZombieAnimation.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 9298aa45230b4b688e8972d8b2a2e06b
+timeCreated: 1769447146
+
+// ===== Features/Enemy/ZombieController.cs =====
+﻿using System;
+using Core.Interfaces;
+using UnityEngine;
+
+namespace Features.Enemy
+{
+    [RequireComponent(typeof(CharacterController))]
+    [RequireComponent(typeof(ZombieAnimation))]
+    public class ZombieController : MonoBehaviour, IDamageable
+    {
+        [SerializeField] private float _maxHealth = 100f;
+        [SerializeField] private float _moveSpeed = 1.5f;
+
+        public event Action OnDeath;
+        public event Action<float> OnHealthChanged;
+
+        private ZombieAnimation _animation;
+        private float _currentHealth;
+        private bool _isAlive;
+        private CharacterController _characterController;
+        private Vector3 _moveDirection = Vector3.back; 
+
+        public bool IsAlive => _isAlive;
+
+        private void Awake()
+        {
+            _animation = GetComponent<ZombieAnimation>();
+            _characterController = GetComponent<CharacterController>();
+        }
+
+        public void Initialize()
+        {
+            _isAlive = true;
+            
+            _animation.PlayWalk();
+        }
+
+        private void Update()
+        {
+            if (!_isAlive) return;
+
+            Move();
+        }
+
+        public void TakeDamage(float damage)
+        {
+            if (!_isAlive) return;
+
+            _currentHealth -= damage;
+            OnHealthChanged?.Invoke(_currentHealth);
+
+            if (_currentHealth <= 0)
+            {
+                Die();
+            }
+        }
+
+        private void Move()
+        {
+            _characterController.Move(_moveDirection * _moveSpeed * Time.deltaTime);
+        }
+
+        private void Die()
+        {
+            _isAlive = false;
+            _animation.PlayDeath();
+            OnDeath?.Invoke();
+            
+            _characterController.enabled = false;
+            Destroy(gameObject, 5f); 
+        }
+    }
+}
+
+// ===== Features/Enemy/ZombieController.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 24fa2672311f436e9f408df0f3643d25
+timeCreated: 1769447128
+
 // ===== Infrastructure.meta =====
 fileFormatVersion: 2
 guid: 8669cf7c8b9a5e64e9a30bf61f0fd8b4
@@ -409,34 +979,6 @@ DefaultImporter:
   assetBundleVariant: 
 
 
-// ===== Infrastructure/BootstrapLoader.cs =====
-using Core;
-using Core.BaseStates;
-using Core.States;
-using Zenject;
-
-namespace Infrastructure
-{
-    public class BootstrapLoader : IInitializable
-    {
-        private readonly StateMachine _stateMachine;
-
-        public BootstrapLoader(StateMachine stateMachine)
-        {
-            _stateMachine = stateMachine;
-        }
-    
-        public void Initialize()
-        {
-            _stateMachine.ChangeState<BootstrapState>();
-        }
-    }
-}
-
-// ===== Infrastructure/BootstrapLoader.cs.meta =====
-fileFormatVersion: 2
-guid: 01a01368e40442e4caf0cbc685c8ec57
-
 // ===== Infrastructure/Factories.meta =====
 fileFormatVersion: 2
 guid: 4f0fa5849b47de24faf1a8e16b32c513
@@ -447,6 +989,75 @@ DefaultImporter:
   assetBundleName: 
   assetBundleVariant: 
 
+
+// ===== Infrastructure/Factories/Enemies.meta =====
+﻿fileFormatVersion: 2
+guid: c813a465ca044d288bc3e94fd44ea328
+timeCreated: 1769447221
+
+// ===== Infrastructure/Factories/Enemies/EnemyFactory.cs =====
+﻿using Cysharp.Threading.Tasks;
+using Features.Enemy;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Providers.Context;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+
+namespace Infrastructure.Factories.Enemies
+{
+    public class EnemyFactory : IEnemyFactory
+    {
+        private readonly IGameObjectFactory _gameObjectFactory;
+        private readonly ILevelProvider _levelProvider;
+
+        public EnemyFactory(IGameObjectFactory gameObjectFactory, ILevelProvider levelProvider)
+        {
+            _gameObjectFactory = gameObjectFactory;
+            _levelProvider = levelProvider;
+        }
+
+        public async UniTask<ZombieController> CreateZombie(AssetReference assetRef, Vector3 position)
+        {
+            GameObject obj = await _gameObjectFactory.InstantiateAsync(assetRef, position, Quaternion.LookRotation(Vector3.back));
+            
+            var zombie = obj.GetComponent<ZombieController>();
+            zombie.Initialize();
+            
+            _levelProvider.CurrentLevel.RegisterEnemy(zombie);
+            
+            zombie.OnDeath += () => 
+            {
+                _levelProvider.CurrentLevel?.UnregisterEnemy(zombie);
+            };
+            
+            return zombie;
+        }
+    }
+}
+
+// ===== Infrastructure/Factories/Enemies/EnemyFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: a6b00a9ce6724fc38265221e09105071
+timeCreated: 1769447251
+
+// ===== Infrastructure/Factories/Enemies/IEnemyFactory.cs =====
+﻿using Cysharp.Threading.Tasks;
+using Features.Enemy;
+using UnityEngine;
+using UnityEngine.AddressableAssets;
+
+namespace Infrastructure.Factories.Enemies
+{
+    public interface IEnemyFactory
+    {
+        UniTask<ZombieController> CreateZombie(AssetReference assetRef, Vector3 position);
+    }
+}
+
+// ===== Infrastructure/Factories/Enemies/IEnemyFactory.cs.meta =====
+﻿fileFormatVersion: 2
+guid: b8e582da80d94bf790bc8075a0e41cdf
+timeCreated: 1769447228
 
 // ===== Infrastructure/Factories/Objects.meta =====
 ﻿fileFormatVersion: 2
@@ -722,7 +1333,25 @@ DefaultImporter:
 
 
 // ===== Infrastructure/Installers/BootstrapInstaller.cs =====
-﻿using Zenject;
+﻿using Core.BaseStates;
+using Infrastructure.Factories.Enemies;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Factories.States;
+using Infrastructure.Factories.UI;
+using Infrastructure.Providers.AssetsAddressables;
+using Infrastructure.Providers.Context;
+using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Economy;
+using Infrastructure.Services.FPS;
+using Infrastructure.Services.Grid;
+using Infrastructure.Services.Input;
+using Infrastructure.Services.Lanes;
+using Infrastructure.Services.Physics;
+using Infrastructure.Services.Scene;
+using Infrastructure.Services.UI;
+using Infrastructure.Services.Waves;
+using Infrastructure.Services.Window;
+using Zenject;
 
 namespace Infrastructure.Installers
 {
@@ -730,9 +1359,48 @@ namespace Infrastructure.Installers
     {
         public override void InstallBindings()
         {
-            Container.Bind<BootstrapLoader>().AsSingle().NonLazy();
+            BindBootstrap();
+            BindProviders();
+            BindServices();
+            BindFactories();
+        }
 
+        private void BindBootstrap()
+        {
+            Container.Bind<BootstrapLoader>().AsSingle().NonLazy();
             Container.Bind<IInitializable>().To<BootstrapLoader>().FromResolve();
+        }
+
+        private void BindProviders()
+        {
+            Container.Bind<IAssetsAddressablesProvider>().To<AssetsAddressablesProvider>().AsSingle();
+            Container.Bind<ILevelProvider>().To<LevelProvider>().AsSingle();
+            Container.Bind<IStaticDataProvider>().To<StaticDataProvider>().AsSingle();
+        }
+
+        private void BindServices()
+        {
+            Container.Bind<StateMachine>().AsSingle();
+            Container.Bind<ISceneLoaderService>().To<SceneLoaderService>().AsSingle();
+            Container.Bind<IWindowService>().To<WindowService>().AsSingle();
+            Container.BindInterfacesAndSelfTo<InputService>().AsSingle().NonLazy();
+            
+            Container.Bind<IAerodynamicsCalculationService>().To<AerodynamicsCalculationService>().AsSingle();
+            Container.BindInterfacesAndSelfTo<FPSService>().AsSingle();
+
+            Container.Bind<ILaneService>().To<LaneService>().AsSingle();
+            Container.Bind<IGridService>().To<GridService>().AsSingle();
+            Container.BindInterfacesAndSelfTo<WaveService>().AsSingle();
+            
+            Container.BindInterfacesAndSelfTo<EconomyService>().AsSingle();
+        }
+
+        private void BindFactories()
+        {
+            Container.Bind<IStateFactory>().To<StateFactory>().AsSingle();
+            Container.Bind<IUIFactory>().To<UIFactory>().AsSingle();
+            Container.Bind<IGameObjectFactory>().To<GameObjectFactory>().AsSingle();
+            Container.Bind<IEnemyFactory>().To<EnemyFactory>().AsSingle();
         }
     }
 }
@@ -742,57 +1410,37 @@ namespace Infrastructure.Installers
 guid: fae07a79ec904afdb2d204e8f38b6fbd
 timeCreated: 1769386805
 
-// ===== Infrastructure/Installers/GameInstaller.cs =====
-﻿using Core.BaseStates;
-using Infrastructure.Factories.Objects;
-using Infrastructure.Factories.States;
-using Infrastructure.Factories.UI;
-using Infrastructure.Providers.AssetsAddressables;
-using Infrastructure.Services.Input;
-using Infrastructure.Services.Physics;
-using Infrastructure.Services.Scene;
-using Infrastructure.Services.UI;
-using Infrastructure.Services.Window;
+// ===== Infrastructure/Installers/BootstrapLoader.cs =====
+using Core.BaseStates;
+using Core.States;
+using Infrastructure.Providers.StaticData;
 using Zenject;
 
 namespace Infrastructure.Installers
 {
-    public class GameInstaller : MonoInstaller
+    public class BootstrapLoader : IInitializable
     {
-        public override void InstallBindings()
-        {
-            BindServices();
-            BindProviders();
-            BindFactories();
-        }
+        private readonly StateMachine _stateMachine;
+        private readonly IStaticDataProvider _provider;
 
-        private void BindServices()
+        public BootstrapLoader(StateMachine stateMachine, IStaticDataProvider staticDataProvider)
         {
-            Container.Bind<StateMachine>().AsSingle();
-            Container.Bind<ISceneLoaderService>().To<SceneLoaderService>().AsSingle();
-            Container.Bind<IWindowService>().To<WindowService>().AsSingle();
-            Container.Bind<IInputService>().To<InputService>().AsSingle();
-            Container.Bind<IAerodynamicsCalculationService>().To<AerodynamicsCalculationService>().AsSingle();
+            _stateMachine = stateMachine;
+            _provider = staticDataProvider;
         }
-
-        private void BindProviders()
+    
+        public void Initialize()
         {
-            Container.Bind<IAssetsAddressablesProvider>().To<AssetsAddressablesProvider>().AsSingle();
-        }
-
-        private void BindFactories()
-        {
-            Container.Bind<IStateFactory>().To<StateFactory>().AsSingle();
-            Container.Bind<IUIFactory>().To<UIFactory>().AsSingle();
-            Container.Bind<IGameObjectFactory>().To<GameObjectFactory>().AsSingle();
+            _provider.Load();
+            
+            _stateMachine.ChangeState<BootstrapState>();
         }
     }
 }
 
-// ===== Infrastructure/Installers/GameInstaller.cs.meta =====
-﻿fileFormatVersion: 2
-guid: 789ff086d7ba4e63b9bbcf8acce1c6a8
-timeCreated: 1769386879
+// ===== Infrastructure/Installers/BootstrapLoader.cs.meta =====
+fileFormatVersion: 2
+guid: 01a01368e40442e4caf0cbc685c8ec57
 
 // ===== Infrastructure/Providers.meta =====
 fileFormatVersion: 2
@@ -914,6 +1562,140 @@ namespace Infrastructure.Providers.AssetsAddressables
 guid: 36c404e05b3f40d7a64aa9d6c85227c5
 timeCreated: 1769389850
 
+// ===== Infrastructure/Providers/Context.meta =====
+﻿fileFormatVersion: 2
+guid: 9f541c63c9634718b7bc8499648b2b82
+timeCreated: 1769451826
+
+// ===== Infrastructure/Providers/Context/ILevelProvider.cs =====
+﻿using System;
+using Features.Context;
+
+namespace Infrastructure.Providers.Context
+{
+    public interface ILevelProvider
+    {
+        LevelContext CurrentLevel { get; }
+        event Action OnLevelLoaded;
+        void SetLevel(LevelContext context);
+        void ClearLevel();
+    }
+}
+
+// ===== Infrastructure/Providers/Context/ILevelProvider.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 3775e9047c3a431fb6472445ef9ad6f5
+timeCreated: 1769451849
+
+// ===== Infrastructure/Providers/Context/LevelProvider.cs =====
+﻿using System;
+using Features.Context;
+
+namespace Infrastructure.Providers.Context
+{
+    public class LevelProvider : ILevelProvider
+    {
+        public LevelContext CurrentLevel { get; private set; }
+        public event Action OnLevelLoaded;
+
+        public void SetLevel(LevelContext context)
+        {
+            CurrentLevel = context;
+            OnLevelLoaded?.Invoke();
+        }
+
+        public void ClearLevel()
+        {
+            CurrentLevel = null;
+        }
+    }
+}
+
+// ===== Infrastructure/Providers/Context/LevelProvider.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 7933169c80304c4ab39cfb12cf7ab01f
+timeCreated: 1769451842
+
+// ===== Infrastructure/Providers/StaticData.meta =====
+﻿fileFormatVersion: 2
+guid: 86b20a203d6747f99980b7ccfa95acaa
+timeCreated: 1769458794
+
+// ===== Infrastructure/Providers/StaticData/IStaticDataProvider.cs =====
+﻿using System.Collections.Generic;
+using Data.Configs;
+using Data.Enums;
+
+namespace Infrastructure.Providers.StaticData
+{
+    public interface IStaticDataProvider
+    {
+        void Load();
+        
+        PlantData GetPlantData(PlantType type);
+        EnemyData GetEnemyData(EnemyType type);
+        LevelData GetLevelData(); 
+        List<PlantData> GetAllPlants();
+        List<EnemyData> GetAllEnemies();
+    }
+}
+
+// ===== Infrastructure/Providers/StaticData/IStaticDataProvider.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 11a6bbca46d04eb596e0fcbe74631be7
+timeCreated: 1769458805
+
+// ===== Infrastructure/Providers/StaticData/StaticDataProvider.cs =====
+﻿using System.Collections.Generic;
+using System.Linq;
+using Data.Configs;
+using Data.Enums;
+using Data.Path;
+using UnityEngine;
+
+namespace Infrastructure.Providers.StaticData
+{
+    public class StaticDataProvider : IStaticDataProvider
+    {
+        private Dictionary<PlantType, PlantData> _plants;
+        private Dictionary<EnemyType, EnemyData> _enemies;
+        private LevelData _levelData;
+
+        public void Load()
+        {
+            _plants = Resources.LoadAll<PlantData>(ConfigsPath.PLANTS_PATH)
+                .ToDictionary(x => x.type, x => x);
+
+            _enemies = Resources.LoadAll<EnemyData>(ConfigsPath.ENEMIES_PATH)
+                .ToDictionary(x => x.type, x => x);
+
+            var levels = Resources.LoadAll<LevelData>(ConfigsPath.LEVEL_PATH);
+            if (levels.Length > 0)
+                _levelData = levels[0];
+            else
+                Debug.LogError("[StaticDataProvider] No LevelConfig found!");
+
+            Debug.Log($"[StaticDataProvider] Loaded {_plants.Count} plants, {_enemies.Count} enemies.");
+        }
+
+        public PlantData GetPlantData(PlantType type) => 
+            _plants.TryGetValue(type, out var data) ? data : null;
+
+        public EnemyData GetEnemyData(EnemyType type) => 
+            _enemies.TryGetValue(type, out var data) ? data : null;
+
+        public LevelData GetLevelData() => _levelData;
+
+        public List<PlantData> GetAllPlants() => _plants.Values.ToList();
+        public List<EnemyData> GetAllEnemies() => _enemies.Values.ToList();
+    }
+}
+
+// ===== Infrastructure/Providers/StaticData/StaticDataProvider.cs.meta =====
+﻿fileFormatVersion: 2
+guid: ef6eb404f96d4e6bb03f316d7afefb7c
+timeCreated: 1769458823
+
 // ===== Infrastructure/Services.meta =====
 fileFormatVersion: 2
 guid: f47fd43eb6ff7be489ddf284a5550006
@@ -924,6 +1706,321 @@ DefaultImporter:
   assetBundleName: 
   assetBundleVariant: 
 
+
+// ===== Infrastructure/Services/Camera.meta =====
+﻿fileFormatVersion: 2
+guid: 503a8020ccd84a16b132ae5a8c369562
+timeCreated: 1769463234
+
+// ===== Infrastructure/Services/Camera/CameraService.cs =====
+﻿namespace Infrastructure.Services.Camera
+{
+    public class CameraService
+    {
+        
+    }
+}
+
+// ===== Infrastructure/Services/Camera/CameraService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 7e1d6e8eafec497582028433695272a8
+timeCreated: 1769463853
+
+// ===== Infrastructure/Services/Camera/ICameraService.cs =====
+﻿using Cysharp.Threading.Tasks;
+using UnityEngine;
+
+namespace Infrastructure.Services.Camera
+{
+    public interface ICameraService
+    {
+        void SetTacticalView();
+        UniTask MoveToTarget(Transform target, float duration = 0.5f);
+    }
+}
+
+// ===== Infrastructure/Services/Camera/ICameraService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 91c9500e7193408bb718425e7ee82769
+timeCreated: 1769463244
+
+// ===== Infrastructure/Services/Economy.meta =====
+﻿fileFormatVersion: 2
+guid: f34376086ee142689f1e724e128b5de9
+timeCreated: 1769457855
+
+// ===== Infrastructure/Services/Economy/EconomyService.cs =====
+﻿using System;
+using Data.Configs;
+using Infrastructure.Providers.StaticData;
+using UnityEngine;
+using Zenject;
+
+namespace Infrastructure.Services.Economy
+{
+    public class EconomyService : IEconomyService, ITickable, IInitializable
+    {
+        private readonly IStaticDataProvider _staticData;
+        
+        private EconomySettings _settings;
+        private int _currentSun;
+        private float _timer;
+        private bool _isIncomeActive;
+
+        public int CurrentSun => _currentSun;
+        public event Action<int> OnSunChanged;
+
+        public EconomyService(IStaticDataProvider staticData)
+        {
+            _staticData = staticData;
+        }
+
+        public void Initialize()
+        {
+            var levelConfig = _staticData.GetLevelData();
+            if (levelConfig != null)
+            {
+                _settings = levelConfig.economy;
+                _currentSun = _settings.startingSun;
+                OnSunChanged?.Invoke(_currentSun);
+            }
+        }
+
+        public void StartPassiveIncome() => _isIncomeActive = true;
+        public void StopPassiveIncome() => _isIncomeActive = false;
+
+        public void AddSun(int amount)
+        {
+            _currentSun += amount;
+            OnSunChanged?.Invoke(_currentSun);
+        }
+
+        public bool TrySpendSun(int amount)
+        {
+            if (_currentSun >= amount)
+            {
+                _currentSun -= amount;
+                OnSunChanged?.Invoke(_currentSun);
+                return true;
+            }
+            return false;
+        }
+
+        public void Tick()
+        {
+            if (!_isIncomeActive || _settings == null) return;
+
+            _timer += Time.deltaTime;
+            if (_timer >= _settings.passiveIncomeInterval)
+            {
+                AddSun(_settings.passiveIncomeAmount);
+                _timer = 0f;
+            }
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Economy/EconomyService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: fd2a7316f5304a4bb39ec250911e1038
+timeCreated: 1769457875
+
+// ===== Infrastructure/Services/Economy/IEconomyService.cs =====
+﻿using System;
+
+namespace Infrastructure.Services.Economy
+{
+    public interface IEconomyService
+    {
+        int CurrentSun { get; }
+        event Action<int> OnSunChanged;
+
+        void AddSun(int amount);
+        bool TrySpendSun(int amount);
+        void StartPassiveIncome();
+        void StopPassiveIncome();
+    }
+}
+
+// ===== Infrastructure/Services/Economy/IEconomyService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 780cb8f09cdc4907ae31a6b017e6fbcb
+timeCreated: 1769457862
+
+// ===== Infrastructure/Services/FPS.meta =====
+﻿fileFormatVersion: 2
+guid: 1264fb31be1b470d8562363b8af4255f
+timeCreated: 1769444722
+
+// ===== Infrastructure/Services/FPS/FPSService.cs =====
+﻿using UnityEngine;
+using Zenject;
+
+namespace Infrastructure.Services.FPS
+{
+    /// <summary>
+    /// Calculates application frame rate using a smoothing buffer.
+    /// </summary>
+    public class FPSService : IFPSService, ITickable
+    {
+        private const int FRAME_RANGE = 60;
+        private readonly int[] _fpsBuffer = new int[FRAME_RANGE];
+        private int _fpsBufferIndex;
+        
+        public float CurrentFps { get; private set; }
+
+        public void Tick()
+        {
+            int currentFps = (int)(1f / Time.unscaledDeltaTime);
+            
+            _fpsBufferIndex = (_fpsBufferIndex + 1) % FRAME_RANGE;
+            _fpsBuffer[_fpsBufferIndex] = currentFps;
+
+            CalculateAverage();
+        }
+
+        private void CalculateAverage()
+        {
+            int sum = 0;
+            for (int i = 0; i < FRAME_RANGE; i++)
+            {
+                sum += _fpsBuffer[i];
+            }
+            
+            CurrentFps = (float)sum / FRAME_RANGE;
+        }
+    }
+}
+
+// ===== Infrastructure/Services/FPS/FPSService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 7dae15b874e24c4a8b17d75e82d2050b
+timeCreated: 1769444740
+
+// ===== Infrastructure/Services/FPS/IFPSService.cs =====
+﻿namespace Infrastructure.Services.FPS
+{
+    public interface IFPSService
+    {
+        float CurrentFps { get; }
+    }
+}
+
+// ===== Infrastructure/Services/FPS/IFPSService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 1b4080f90ddb4baa878e7e20269d3095
+timeCreated: 1769444735
+
+// ===== Infrastructure/Services/Grid.meta =====
+﻿fileFormatVersion: 2
+guid: d32f873d64d54ba2a3647dd5fa4c6e33
+timeCreated: 1769449839
+
+// ===== Infrastructure/Services/Grid/GridService.cs =====
+﻿using System.Collections.Generic;
+using Infrastructure.Providers.Context;
+using Infrastructure.Services.Lanes;
+using UnityEngine;
+
+namespace Infrastructure.Services.Grid
+{
+    public class GridService : IGridService
+    {
+        private readonly ILevelProvider _levelProvider;
+        private readonly LaneService _laneService;
+        private readonly Dictionary<Vector2Int, GameObject> _occupiedCells = new();
+
+        public GridService(ILevelProvider levelProvider, ILaneService laneService)
+        {
+            _levelProvider = levelProvider;
+            _laneService = (LaneService)laneService;
+        }
+
+        public bool WorldToGrid(Vector3 worldPos, out int laneIndex, out int rowIndex)
+        {
+            laneIndex = -1;
+            rowIndex = -1;
+            var level = _levelProvider.CurrentLevel;
+
+            Vector3 localPos = Quaternion.Inverse(level.OriginRotation) * (worldPos - level.OriginPosition);
+
+            float totalWidth = level.LaneCount * level.LaneWidth;
+            float halfWidth = totalWidth / 2f;
+            
+            float xRelative = localPos.x + halfWidth;
+            
+            if (xRelative < 0 || xRelative > totalWidth) return false;
+
+            laneIndex = Mathf.FloorToInt(xRelative / level.LaneWidth);
+            
+            float zRelative = localPos.z;
+            if (zRelative > 0 || zRelative < -(level.RowsCount * level.CellLength)) return false;
+
+            rowIndex = Mathf.FloorToInt(Mathf.Abs(zRelative) / level.CellLength);
+
+            return laneIndex >= 0 && laneIndex < level.LaneCount &&
+                   rowIndex >= 0 && rowIndex < level.RowsCount;
+        }
+
+        public Vector3 GridToWorld(int laneIndex, int rowIndex)
+        {
+            var level = _levelProvider.CurrentLevel;
+            float xOffset = _laneService.GetLaneCenterLocalX(laneIndex);
+            
+            float zOffset = -(rowIndex * level.CellLength) - (level.CellLength / 2f);
+
+            Vector3 localPos = new Vector3(xOffset, 0, zOffset);
+            return level.OriginPosition + (level.OriginRotation * localPos);
+        }
+
+        public bool IsCellOccupied(int lane, int row) => _occupiedCells.ContainsKey(new Vector2Int(lane, row));
+
+        public bool TryOccupyCell(int lane, int row, GameObject plant)
+        {
+            var key = new Vector2Int(lane, row);
+            if (_occupiedCells.ContainsKey(key)) return false;
+
+            _occupiedCells[key] = plant;
+            return true;
+        }
+
+        public void ReleaseCell(int lane, int row)
+        {
+            var key = new Vector2Int(lane, row);
+            if (_occupiedCells.ContainsKey(key))
+                _occupiedCells.Remove(key);
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Grid/GridService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 38df452a4c4c4d029dcf7a31b2f14940
+timeCreated: 1769449850
+
+// ===== Infrastructure/Services/Grid/IGridService.cs =====
+﻿using UnityEngine;
+
+namespace Infrastructure.Services.Grid
+{
+    public interface IGridService
+    {
+        // Converts world click to grid coordinates (Lane Index, Row Index)
+        bool WorldToGrid(Vector3 worldPos, out int laneIndex, out int rowIndex);
+        
+        // Converts grid coordinates to World Position (center of cell)
+        Vector3 GridToWorld(int laneIndex, int rowIndex);
+        
+        bool IsCellOccupied(int lane, int row);
+        bool TryOccupyCell(int lane, int row, GameObject plant);
+        void ReleaseCell(int lane, int row);
+    }
+}
+
+// ===== Infrastructure/Services/Grid/IGridService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: b5fd8ba939e34a788f2e4cb4c4bf71b9
+timeCreated: 1769449865
 
 // ===== Infrastructure/Services/Input.meta =====
 ﻿fileFormatVersion: 2
@@ -979,7 +2076,6 @@ namespace Infrastructure.Services.Input
         public InputService()
         {
             _inputActions = new InputActions();
-            _inputActions.Enable();
             SubscribeEvents();
         }
 
@@ -1036,6 +2132,91 @@ namespace Infrastructure.Services.Input
 ﻿fileFormatVersion: 2
 guid: bf7e0b80f67540eba7f6954c6be46760
 timeCreated: 1769439398
+
+// ===== Infrastructure/Services/Lanes.meta =====
+﻿fileFormatVersion: 2
+guid: 043fd79b9a744c0da42c6aa9f4d1ae45
+timeCreated: 1769447058
+
+// ===== Infrastructure/Services/Lanes/ILaneService.cs =====
+﻿using UnityEngine;
+
+namespace Infrastructure.Services.Lanes
+{
+    public interface ILaneService
+    {
+        public int LaneCount { get; }
+        Vector3 GetSpawnPosition(int laneIndex);
+        Vector3 GetZombieEndPoint(int laneIndex);
+        float GetLaneCenterLocalX(int laneIndex);
+        float GetLaneZCoordinate(int laneIndex);
+    }
+}
+
+// ===== Infrastructure/Services/Lanes/ILaneService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: c8099ea8036d4202911c2339c46035d6
+timeCreated: 1769447067
+
+// ===== Infrastructure/Services/Lanes/LaneService.cs =====
+﻿using Infrastructure.Providers.Context;
+using UnityEngine;
+
+namespace Infrastructure.Services.Lanes
+{
+    public class LaneService : ILaneService
+    {
+        private readonly ILevelProvider _levelProvider;
+
+        public int LaneCount => _levelProvider.CurrentLevel.LaneCount;
+
+        public LaneService(ILevelProvider levelProvider)
+        {
+            _levelProvider = levelProvider;
+        }
+
+        public Vector3 GetSpawnPosition(int laneIndex)
+        {
+            var level = _levelProvider.CurrentLevel;
+            float xOffset = CalculateLaneCenterLocalX(laneIndex);
+            
+            Vector3 localPos = new Vector3(xOffset, 0, level.ZombieSpawnDistance);
+            return level.OriginPosition + (level.OriginRotation * localPos);
+        }
+
+        public Vector3 GetZombieEndPoint(int laneIndex)
+        {
+            var level = _levelProvider.CurrentLevel;
+            float xOffset = CalculateLaneCenterLocalX(laneIndex);
+            
+            float zEnd = -(level.RowsCount * level.CellLength) - 2.0f;
+            
+            Vector3 localPos = new Vector3(xOffset, 0, zEnd);
+            return level.OriginPosition + (level.OriginRotation * localPos);
+        }
+
+        public float GetLaneCenterLocalX(int laneIndex)
+        {
+            return CalculateLaneCenterLocalX(laneIndex);
+        }
+        
+        public float GetLaneZCoordinate(int laneIndex) => 0;
+
+        private float CalculateLaneCenterLocalX(int laneIndex)
+        {
+            var level = _levelProvider.CurrentLevel;
+            float totalWidth = level.LaneCount * level.LaneWidth;
+            float startX = -totalWidth / 2f;
+            
+            return startX + (laneIndex * level.LaneWidth) + (level.LaneWidth / 2f);
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Lanes/LaneService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 24405fafcfdc48fcaeea54469fc945c6
+timeCreated: 1769447080
 
 // ===== Infrastructure/Services/Physics.meta =====
 ﻿fileFormatVersion: 2
@@ -1102,6 +2283,139 @@ namespace Infrastructure.Services.Physics
 ﻿fileFormatVersion: 2
 guid: 65bc1c9655274f56aed79bcf4f2e1dba
 timeCreated: 1769440390
+
+// ===== Infrastructure/Services/Planting.meta =====
+﻿fileFormatVersion: 2
+guid: 63f3126914d341e9b15af1bcdc3db1cb
+timeCreated: 1769458860
+
+// ===== Infrastructure/Services/Planting/IPlantingService.cs =====
+﻿using Data.Enums;
+
+namespace Infrastructure.Services.Planting
+{
+    public interface IPlantingService
+    {
+        void SelectPlant(PlantType type);
+        void TryPlantAtCursor();
+    }
+}
+
+// ===== Infrastructure/Services/Planting/IPlantingService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 8d13618a5f0f4c8a81ae822e7bbc757d
+timeCreated: 1769458872
+
+// ===== Infrastructure/Services/Planting/PlantingService.cs =====
+﻿using Data.Enums;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Economy;
+using Infrastructure.Services.Grid;
+using Infrastructure.Services.Input;
+using UnityEngine;
+using Zenject;
+
+namespace Infrastructure.Services.Planting
+{
+    public class PlantingService : IPlantingService, IInitializable, System.IDisposable
+    {
+        private readonly IInputService _inputService;
+        private readonly IGridService _gridService;
+        private readonly IEconomyService _economyService;
+        private readonly IGameObjectFactory _factory;
+        private readonly IStaticDataProvider _staticData;
+
+        private PlantType _selectedPlantType = PlantType.None;
+
+        public PlantingService(
+            IInputService inputService, 
+            IGridService gridService, 
+            IEconomyService economyService,
+            IGameObjectFactory factory,
+            IStaticDataProvider staticData)
+        {
+            _inputService = inputService;
+            _gridService = gridService;
+            _economyService = economyService;
+            _factory = factory;
+            _staticData = staticData;
+        }
+
+        public void Initialize()
+        {
+            _inputService.OnClickPerformed += TryPlantAtCursor;
+            _inputService.OnHotbarHotkeyPressed += OnHotbarPressed;
+            _inputService.OnCancelPerformed += Deselect;
+        }
+
+        public void Dispose()
+        {
+            _inputService.OnClickPerformed -= TryPlantAtCursor;
+            _inputService.OnHotbarHotkeyPressed -= OnHotbarPressed;
+            _inputService.OnCancelPerformed -= Deselect;
+        }
+
+        private void OnHotbarPressed(int slotIndex)
+        {
+            if (slotIndex == 1) SelectPlant(PlantType.CoconutCannon);
+            else if (slotIndex == 2) SelectPlant(PlantType.Peashooter);
+        }
+
+        public void SelectPlant(PlantType type)
+        {
+            _selectedPlantType = type;
+            Debug.Log($"[PlantingService] Selected: {type}");
+        }
+        
+        private void Deselect()
+        {
+            _selectedPlantType = PlantType.None;
+        }
+
+        public async void TryPlantAtCursor()
+        {
+            if (_selectedPlantType == PlantType.None) return;
+
+            var plantData = _staticData.GetPlantData(_selectedPlantType);
+            if (plantData == null) return;
+
+            Vector2 mousePos = _inputService.GetPointerPosition();
+            Ray ray = UnityEngine.Camera.main.ScreenPointToRay(mousePos);
+
+            if (UnityEngine.Physics.Raycast(ray, out RaycastHit hit, 1000f, LayerMask.GetMask("Default", "Ground")))
+            {
+                if (_gridService.WorldToGrid(hit.point, out int lane, out int row))
+                {
+                    if (_gridService.IsCellOccupied(lane, row))
+                    {
+                        Debug.Log("Cell Occupied!");
+                        return;
+                    }
+
+                    if (_economyService.TrySpendSun(plantData.cost))
+                    {
+                        Vector3 buildPos = _gridService.GridToWorld(lane, row);
+                        GameObject plantObj = await _factory.InstantiateAsync(plantData.prefabReference, buildPos, Quaternion.identity);
+                        
+                        _gridService.TryOccupyCell(lane, row, plantObj);
+                        
+                        _selectedPlantType = PlantType.None; 
+                    }
+                    else
+                    {
+                        Debug.Log("Not enough sun!");
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Planting/PlantingService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 001f3caca70d4cd1bc0115566f96cee4
+timeCreated: 1769458882
 
 // ===== Infrastructure/Services/Scene.meta =====
 ﻿fileFormatVersion: 2
@@ -1263,6 +2577,154 @@ namespace Infrastructure.Services.UI
 guid: a3165a97e39840c58f1cc3fe86ca8918
 timeCreated: 1769390415
 
+// ===== Infrastructure/Services/Waves.meta =====
+﻿fileFormatVersion: 2
+guid: 18a92d2ceef64941bb83350b1313efa0
+timeCreated: 1769447335
+
+// ===== Infrastructure/Services/Waves/IWaveService.cs =====
+﻿namespace Infrastructure.Services.Waves
+{
+    public interface IWaveService
+    {
+        void StartLevel();
+    }
+}
+
+// ===== Infrastructure/Services/Waves/IWaveService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 2d942daac3114c0d9454d6c91dca7c35
+timeCreated: 1769458984
+
+// ===== Infrastructure/Services/Waves/WaveService.cs =====
+﻿using System.Collections.Generic;
+using Data.Configs;
+using Infrastructure.Factories.Enemies;
+using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Economy;
+using Infrastructure.Services.Lanes;
+using UnityEngine;
+using Zenject;
+
+namespace Infrastructure.Services.Waves
+{
+    public class WaveService : IWaveService, ITickable
+    {
+        private readonly IEnemyFactory _enemyFactory;
+        private readonly ILaneService _laneService;
+        private readonly IStaticDataProvider _staticData;
+        private readonly IEconomyService _economyService; 
+
+        private LevelData _levelConfig;
+        private int _currentWaveIndex = 0;
+        private float _stateTimer;
+        private bool _isRunning;
+        
+        private Queue<WaveGroup> _currentGroupsQueue = new();
+        private WaveGroup _activeGroup;
+        private int _spawnedInGroupCount;
+
+        public event System.Action<int> OnWaveStarted;
+
+        public WaveService(
+            IEnemyFactory enemyFactory, 
+            ILaneService laneService, 
+            IStaticDataProvider staticData, 
+            IEconomyService economyService)
+        {
+            _enemyFactory = enemyFactory;
+            _laneService = laneService;
+            _staticData = staticData;
+            _economyService = economyService;
+        }
+
+        public void StartLevel()
+        {
+            _levelConfig = _staticData.GetLevelData();
+            if (_levelConfig == null || _levelConfig.waves.Count == 0)
+            {
+                Debug.LogError("[WaveService] No Level Config found!");
+                return;
+            }
+
+            _currentWaveIndex = 0;
+            _isRunning = true;
+            StartWave(_currentWaveIndex);
+        }
+
+        public void Tick()
+        {
+            if (!_isRunning) return;
+            _stateTimer -= Time.deltaTime;
+            if (_stateTimer <= 0) ProcessWaveLogic();
+        }
+
+        private void ProcessWaveLogic()
+        {
+            if (_activeGroup == null)
+            {
+                StartWave(_currentWaveIndex);
+                return;
+            }
+
+            SpawnEnemy(_activeGroup.enemyType);
+            _spawnedInGroupCount++;
+
+            if (_spawnedInGroupCount >= _activeGroup.count)
+                NextGroup();
+            else
+                _stateTimer = _activeGroup.spawnInterval;
+        }
+
+        private async void SpawnEnemy(Data.Enums.EnemyType type)
+        {
+            var enemyData = _staticData.GetEnemyData(type);
+            if (enemyData == null) return;
+
+            int randomLane = UnityEngine.Random.Range(0, _laneService.LaneCount);
+            Vector3 spawnPos = _laneService.GetSpawnPosition(randomLane);
+
+            var zombie = await _enemyFactory.CreateZombie(enemyData.prefabReference, spawnPos);
+            
+            zombie.OnDeath += () => _economyService.AddSun(enemyData.killReward);
+        }
+        
+        private void NextGroup()
+        {
+            if (_currentGroupsQueue.Count == 0)
+            {
+                _currentWaveIndex++;
+                if (_currentWaveIndex < _levelConfig.waves.Count)
+                    _stateTimer = _levelConfig.waves[_currentWaveIndex].startDelay;
+                else
+                    _isRunning = false;
+                return;
+            }
+            _activeGroup = _currentGroupsQueue.Dequeue();
+            _spawnedInGroupCount = 0;
+            _stateTimer = 0f; 
+        }
+
+        private void StartWave(int index)
+        {
+            if (index >= _levelConfig.waves.Count)
+            {
+                _isRunning = false;
+                return;
+            }
+            var waveInfo = _levelConfig.waves[index];
+            _currentGroupsQueue = new Queue<WaveGroup>(waveInfo.groups);
+            OnWaveStarted?.Invoke(index + 1);
+            NextGroup();
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Waves/WaveService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: f13e095bff384eb9a19c91f091ac57f1
+timeCreated: 1769447351
+
 // ===== Physics.meta =====
 fileFormatVersion: 2
 guid: 59ee1b769c7e49046b803434c9b0e204
@@ -1275,7 +2737,9 @@ DefaultImporter:
 
 
 // ===== Physics/PhysicsProjectile.cs =====
-﻿using Infrastructure.Services.Physics;
+﻿using System;
+using Core.Interfaces;
+using Infrastructure.Services.Physics;
 using UnityEngine;
 using Zenject;
 
@@ -1334,6 +2798,18 @@ namespace Physics
 
             Vector3 dragForce = _calculator.CalculateDragForce(_rb.linearVelocity, _airDensity, _dragCoefficient, _area, _wind);
             _rb.AddForce(dragForce, ForceMode.Force);
+        }
+
+        private void OnCollisionEnter(Collision other)
+        {
+            var damageable = other.gameObject.GetComponent<IDamageable>();
+            if (damageable != null && damageable.IsAlive)
+            {
+                float damage = _mass * other.relativeVelocity.magnitude;
+                damageable.TakeDamage(damage);
+            }
+            
+            Destroy(gameObject);
         }
     }
 }
@@ -1434,6 +2910,54 @@ timeCreated: 1769440216
 ﻿fileFormatVersion: 2
 guid: c9d66a54e60d45f294f0803836975431
 timeCreated: 1769389414
+
+// ===== UI/HUD.meta =====
+﻿fileFormatVersion: 2
+guid: d178146f25fb40458c87ecd7c659ab3c
+timeCreated: 1769444820
+
+// ===== UI/HUD/HUDWindow.cs =====
+﻿using Infrastructure.Services.FPS;
+using TMPro;
+using UnityEngine;
+using Zenject;
+
+namespace UI.HUD
+{
+    /// <summary>
+    /// Controls the Heads-Up Display, updating FPS and other realtime stats.
+    /// </summary>
+    public class HudWindow : MonoBehaviour
+    {
+        [SerializeField] private TextMeshProUGUI _fpsText;
+        [SerializeField] private float _updateInterval = 0.2f;
+
+        private IFPSService _fpsService;
+        private float _lastUpdateTimer;
+
+        [Inject]
+        public void Construct(IFPSService fpsService)
+        {
+            _fpsService = fpsService;
+        }
+
+        private void Update()
+        {
+            _lastUpdateTimer += Time.deltaTime;
+
+            if (_lastUpdateTimer >= _updateInterval)
+            {
+                _fpsText.text = $"FPS: {_fpsService.CurrentFps:F0}";
+                _lastUpdateTimer = 0f;
+            }
+        }
+    }
+}
+
+// ===== UI/HUD/HUDWindow.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 6c42822778b543bb9268280ef80e1c4b
+timeCreated: 1769444830
 
 // ===== all_sources.txt.meta =====
 fileFormatVersion: 2

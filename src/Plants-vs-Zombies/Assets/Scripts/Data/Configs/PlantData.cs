@@ -10,7 +10,6 @@ namespace Data.Configs
     public class PlantData : ScriptableObject
     {
         [Header("General Info")]
-        [Tooltip("Unique ID auto-generated")]
         public int id;
         public PlantType type;
         public string plantName;
@@ -22,13 +21,26 @@ namespace Data.Configs
 
         [Header("Economy")]
         [Min(0)] public int cost;
-        [Tooltip("Cooldown in seconds between planting")]
         public float cooldown = 5f;
 
         [Header("Combat Stats")]
         public float health = 100f;
-        public float attackRange = 10f;
-        public float attackRate = 1.5f;
+        
+        [Header("Cannon Physics")]
+        public AssetReference projectileAsset;
+        public float rotationSpeed = 45f;
+        public float initialSpeed = 20f;
+        public float minPitch = -30f;
+        public float maxPitch = 30f;
+        public float minYaw = -45f;
+        public float maxYaw = 45f;
+        
+        [Header("Projectile Config")]
+        public float projectileMass = 2f;
+        public float projectileRadius = 0.5f;
+        public float dragCoeff = 0.47f;
+        public float airDensity = 1.225f;
+        public Vector3 wind = Vector3.zero;
 
 #if UNITY_EDITOR
         private void Reset()

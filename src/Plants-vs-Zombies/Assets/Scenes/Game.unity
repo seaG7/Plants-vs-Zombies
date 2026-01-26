@@ -475,6 +475,37 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1837976600
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1837976601}
+  m_Layer: 0
+  m_Name: CameraPos
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1837976601
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1837976600}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 18.190002, z: -24.25}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3382631763962721913}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!4 &51475223575099447
 Transform:
   m_ObjectHideFlags: 0
@@ -853,13 +884,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5760074255105496585}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.083284184, y: -0, z: -0, w: 0.9965258}
-  m_LocalPosition: {x: 0, y: 18.19, z: -24.25}
+  m_LocalRotation: {x: 0.2931961, y: -0.5685276, z: 0.22698575, w: 0.7343637}
+  m_LocalPosition: {x: 535.4, y: 54.5, z: 87.4}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3382631763962721913}
-  m_LocalEulerAnglesHint: {x: 9.555, y: 0, z: 0}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 43.529, y: -75.492, z: 0}
 --- !u!4 &2712900878642390360
 Transform:
   m_ObjectHideFlags: 0
@@ -987,7 +1018,7 @@ Transform:
   m_Children:
   - {fileID: 3512600733593303154}
   - {fileID: 5709768638774560241}
-  - {fileID: 2626641136145932280}
+  - {fileID: 1837976601}
   - {fileID: 3277544778133059080}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -1907,6 +1938,7 @@ MonoBehaviour:
   _cellLength: 20
   _zombieSpawnDistance: 250
   _rowsCount: 2
+  _cameraTacticalPoint: {fileID: 0}
 --- !u!114 &7852680130726829268
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1923,23 +1955,7 @@ MonoBehaviour:
   _horizontalAxis: {fileID: 3277544778133059080}
   _verticalAxis: {fileID: 6504329120647712037}
   _visualizer: {fileID: 3027087327520361555}
-  _projectileAsset:
-    m_AssetGUID: 3b1e96570729b974db5a90da353cb2dc
-    m_SubObjectName: 
-    m_SubObjectGUID: 
-    m_SubObjectType: 
-    m_EditorAssetChanged: 0
-  _rotationSpeed: 45
-  _initialSpeed: 80
-  _minPitch: -35
-  _maxPitch: 35
-  _minYaw: -45
-  _maxYaw: 45
-  _mass: 2
-  _radius: 0.2
-  _dragCoeff: 0.47
-  _airDensity: 1.225
-  _wind: {x: 0, y: 0, z: 0}
+  _cameraMountPoint: {fileID: 1837976601}
 --- !u!120 &7943062208722597163
 LineRenderer:
   serializedVersion: 2
@@ -2203,3 +2219,4 @@ SceneRoots:
   - {fileID: 1835748342}
   - {fileID: 2048748182689204940}
   - {fileID: 3382631763962721913}
+  - {fileID: 2626641136145932280}
