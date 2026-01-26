@@ -18,7 +18,7 @@ namespace Physics
         private IAerodynamicsCalculationService _calculator;
 
         [Inject]
-        public void Construct(AerodynamicsCalculationService calculator)
+        public void Construct(IAerodynamicsCalculationService calculator)
         {
             _calculator = calculator;
             _lineRenderer = GetComponent<LineRenderer>();

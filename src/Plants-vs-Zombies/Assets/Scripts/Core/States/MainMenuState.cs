@@ -19,6 +19,8 @@ namespace Core.States
         public void Enter()
         {
             _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            
+            _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
         }
 
         public void Exit()

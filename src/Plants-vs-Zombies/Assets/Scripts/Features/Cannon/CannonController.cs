@@ -2,6 +2,7 @@
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
+using UnityEngine.AddressableAssets;
 using Zenject;
 
 namespace Features.Cannon
@@ -18,7 +19,7 @@ namespace Features.Cannon
         [SerializeField] private TrajectoryVisualizer _visualizer;
         
         [Header("Settings")]
-        [SerializeField] private string _projectileAddress;
+        [SerializeField] private AssetReference _projectileAsset;
         [SerializeField] private float _rotationSpeed = 45f;
         [SerializeField] private float _initialSpeed = 20f;
 
@@ -38,7 +39,6 @@ namespace Features.Cannon
         private IGameObjectFactory _factory;
         private bool _isActive;
 
-        // Текущие углы для клампа
         private float _currentYaw;
         private float _currentPitch;
 
@@ -84,14 +84,10 @@ namespace Features.Cannon
 
             if (input.sqrMagnitude > Mathf.Epsilon)
             {
-                // Horizontal (A/D) -> Yaw (Y axis)
                 float yawDelta = input.x * _rotationSpeed * Time.deltaTime;
                 _currentYaw = Mathf.Clamp(_currentYaw + yawDelta, _minYaw, _maxYaw);
                 _horizontalAxis.localRotation = Quaternion.Euler(0, _currentYaw, 0);
-
-                // Vertical (W/S) -> Pitch (X axis)
-                // Обычно W тянет ствол вверх (отрицательный угол в Unity или положительный, зависит от модели)
-                // Допустим, W (input.y > 0) поднимает ствол (уменьшает X euler если ось стандартная)
+                
                 float pitchDelta = -input.y * _rotationSpeed * Time.deltaTime; 
                 _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _minPitch, _maxPitch);
                 _verticalAxis.localRotation = Quaternion.Euler(_currentPitch, 0, 0);
@@ -114,7 +110,8 @@ namespace Features.Cannon
         {
             float currentMass = Random.Range(_mass * 0.95f, _mass * 1.05f);
 
-            var projectileObj = await _factory.InstantiateAsync(_projectileAddress, _muzzle.position, Quaternion.identity);
+            var projectileObj = await _factory.InstantiateAsync(_projectileAsset, _muzzle.position, Quaternion.identity);
+
             var physicsComp = projectileObj.GetComponent<PhysicsProjectile>();
             
             if (physicsComp != null)

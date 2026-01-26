@@ -16,6 +16,7 @@ namespace Infrastructure.Services.Input
         public InputService()
         {
             _inputActions = new InputActions();
+            _inputActions.Enable();
             SubscribeEvents();
         }
 
@@ -45,7 +46,6 @@ namespace Infrastructure.Services.Input
             _inputActions.Gameplay.Fire.performed += FirePerformed;
             _inputActions.Gameplay.Click.performed += ClickPerformed;
             _inputActions.Gameplay.Cancel.performed += CancelPerformed;
-
             _inputActions.Gameplay.Hotbar.performed += HotbarPerformed;
         }
 
