@@ -1,0 +1,11 @@
+﻿namespace Infrastructure.Services
+{
+    public enum WindowID
+    {
+        None = -1,
+        Unknown = 0,
+        MainMenu = 2,
+        Loading = 3,
+        HUD = 4,
+    }
+}
