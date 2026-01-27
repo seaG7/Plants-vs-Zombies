@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using Core.Interfaces;
 using Infrastructure.Providers.Context;
+using Infrastructure.Services.Waves;
 using UnityEngine;
 using Zenject;
 
@@ -11,6 +12,10 @@ namespace Features.Context
     /// </summary>
     public class LevelContext : MonoBehaviour
     {
+        [Header("Debug")]
+        [Tooltip("Toggle this to force start the waves immediately.")]
+        public bool ForceStartWaves;
+
         [Header("Anchors")]
         [SerializeField] private Transform _originPoint;
 
@@ -24,6 +29,7 @@ namespace Features.Context
         [SerializeField] private int _rowsCount = 1;
 
         private ILevelProvider _levelProvider;
+        private IWaveService _waveService;
         
         private readonly List<IDamageable> _activeEnemies = new();
 
@@ -43,14 +49,25 @@ namespace Features.Context
         public Transform CameraTacticalPoint => _cameraTacticalPoint;
 
         [Inject]
-        public void Construct(ILevelProvider levelProvider)
+        public void Construct(ILevelProvider levelProvider, IWaveService waveService)
         {
             _levelProvider = levelProvider;
+            _waveService = waveService;
         }
 
         private void Awake()
         {
             _levelProvider.SetLevel(this);
+        }
+
+        private void Update()
+        {
+            if (ForceStartWaves)
+            {
+                ForceStartWaves = false;
+                Debug.Log("[LevelContext] Force starting waves via Inspector...");
+                _waveService.StartLevel();
+            }
         }
 
         private void OnDestroy()

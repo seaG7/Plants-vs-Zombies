@@ -6,6 +6,7 @@ namespace Infrastructure.Services.Input
     public interface IInputService
     {
         Vector2 GetAimInput();
+        Vector2 GetLookDelta();
         bool IsFirePressed();
 
         Vector2 GetPointerPosition();

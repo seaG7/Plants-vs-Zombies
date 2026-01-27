@@ -20,5 +20,5 @@ MonoBehaviour:
   - startDelay: 3
     groups:
     - enemyType: 1
-      count: 1
+      count: 6
       spawnInterval: 5

@@ -4,14 +4,11 @@ using Zenject;
 
 namespace Physics
 {
-    /// <summary>
-    /// Simulates projectile path using Euler integration and renders it via LineRenderer.
-    /// </summary>
     [RequireComponent(typeof(LineRenderer))]
     public class TrajectoryVisualizer : MonoBehaviour
     {
-        [SerializeField] private int _maxPoints = 50;
-        [SerializeField] private float _timeStep = 0.1f;
+        [SerializeField] private int _maxPoints = 100;
+        [SerializeField] private float _timeStep = 0.02f;
         [SerializeField] private LayerMask _collisionMask;
         
         private LineRenderer _lineRenderer;
@@ -25,24 +22,34 @@ namespace Physics
             _lineRenderer.useWorldSpace = true;
         }
 
+        public void SetMaterial(Material mat)
+        {
+            if (mat != null) _lineRenderer.material = mat;
+        }
+
+        public void SetWidth(float width)
+        {
+            _lineRenderer.startWidth = _lineRenderer.endWidth = width;
+        }
+
         public void SimulateTrajectory(Vector3 startPos, Vector3 startVelocity, float mass, float radius, float dragCoeff, float airDensity, Vector3 wind)
         {
             if (_maxPoints < 2) return;
 
             _lineRenderer.positionCount = _maxPoints;
+            _lineRenderer.SetPosition(0, startPos);
+
             Vector3 currentPos = startPos;
             Vector3 currentVel = startVelocity;
             float area = _calculator.CalculateCrossSectionArea(radius);
-
-            _lineRenderer.SetPosition(0, currentPos);
 
             for (int i = 1; i < _maxPoints; i++)
             {
                 Vector3 dragForce = _calculator.CalculateDragForce(currentVel, airDensity, dragCoeff, area, wind);
                 Vector3 acceleration = _calculator.CalculateAcceleration(UnityEngine.Physics.gravity, dragForce, mass);
 
-                Vector3 nextVel = currentVel + acceleration * _timeStep;
-                Vector3 nextPos = currentPos + nextVel * _timeStep;
+                currentVel += acceleration * _timeStep;
+                Vector3 nextPos = currentPos + currentVel * _timeStep;
 
                 if (CheckCollision(currentPos, nextPos, radius, out Vector3 hitPoint))
                 {
@@ -52,7 +59,6 @@ namespace Physics
                 }
 
                 currentPos = nextPos;
-                currentVel = nextVel;
                 _lineRenderer.SetPosition(i, currentPos);
             }
         }
@@ -68,7 +74,6 @@ namespace Physics
                 hitPoint = hit.point;
                 return true;
             }
-
             return false;
         }
         

@@ -24,6 +24,9 @@ namespace Infrastructure.Services.Input
 
         public Vector2 GetAimInput() => 
             _inputActions.Gameplay.Aim.ReadValue<Vector2>();
+        
+        public Vector2 GetLookDelta() =>
+            Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero;
 
         public Vector2 GetPointerPosition() => 
             Mouse.current.position.ReadValue();

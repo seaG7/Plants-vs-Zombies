@@ -20,8 +20,6 @@ namespace Core.States
 
         public async void Enter()
         {
-            _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
-            
             _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
             
             _stateMachine.ChangeState<GameplayState>();

@@ -14,18 +14,20 @@ namespace Infrastructure.Services.Camera
                 _mainCameraTransform = UnityEngine.Camera.main.transform;
         }
 
-        public void SetTacticalView(Transform tacticalPoint, float duration = 1f)
+        public async void SetTacticalView(Transform tacticalPoint, float duration = 1f)
         {
             if (_mainCameraTransform == null || tacticalPoint == null) return;
             
             _mainCameraTransform.DOMove(tacticalPoint.position, duration).SetEase(Ease.InOutSine);
             _mainCameraTransform.DORotateQuaternion(tacticalPoint.rotation, duration).SetEase(Ease.InOutSine);
+
+            await UniTask.WaitForSeconds(1);
         }
 
         public async UniTask MoveToTarget(Transform target, float duration = 0.5f)
         {
             if (_mainCameraTransform == null || target == null) return;
-
+            
             var sequence = DOTween.Sequence();
             sequence.Join(_mainCameraTransform.DOMove(target.position, duration).SetEase(Ease.OutCubic));
             sequence.Join(_mainCameraTransform.DORotateQuaternion(target.rotation, duration).SetEase(Ease.OutCubic));

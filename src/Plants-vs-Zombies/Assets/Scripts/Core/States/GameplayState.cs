@@ -3,24 +3,20 @@ using Features.Cannon;
 using Infrastructure.Providers.Context;
 using Infrastructure.Services;
 using Infrastructure.Services.Camera;
+using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
 using Infrastructure.Services.Planting;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
-using Infrastructure.Services.Grid;
 using UI.HUD;
 using UnityEngine;
 
 namespace Core.States
 {
-    /// <summary>
-    /// Manages the main gameplay loop, switching between Tactical Planting and Third-Person Possession.
-    /// </summary>
     public class GameplayState : IState, IEnterable, IExitable
     {
         private readonly IWindowService _windowService;
         private readonly IInputService _inputService;
-        private readonly IWaveService _waveService;
         private readonly ICameraService _cameraService;
         private readonly ILevelProvider _levelProvider;
         private readonly IPlantingService _plantingService;
@@ -28,71 +24,56 @@ namespace Core.States
 
         private HudWindow _hudWindow;
         private CannonController _currentPossessedPlant;
-        private bool _isWaveActive;
+        private bool _isInPossessionMode;
+        private bool _waveInProgress = false;
+        
+        private float _nextModeSwitchTime;
+        private readonly IWaveService _waveService;
+        private const float SWITCH_COOLDOWN = 0.5f;
 
         public GameplayState(
             IWindowService windowService, 
             IInputService inputService, 
-            IWaveService waveService,
             ICameraService cameraService,
             ILevelProvider levelProvider,
             IPlantingService plantingService,
-            IGridService gridService)
+            IGridService gridService,
+            IWaveService waveService)
         {
             _windowService = windowService;
             _inputService = inputService;
-            _waveService = waveService;
             _cameraService = cameraService;
             _levelProvider = levelProvider;
             _plantingService = plantingService;
             _gridService = gridService;
+            _waveService = waveService;
         }
 
         public async void Enter()
         {
             _hudWindow = await _windowService.OpenAndGet<HudWindow>(WindowID.HUD);
-            _hudWindow.OnStartWaveClicked += StartWavePhase;
             
             _inputService.Enable();
             _inputService.OnCancelPerformed += HandleEsc;
             _inputService.OnClickPerformed += HandleClick;
-            _waveService.OnWaveStarted += OnWaveStarted;
             
-            EnterTacticalMode();
+            _plantingService.Initialize();
+            EnterPlantingMode();
         }
 
         public void Exit()
         {
-            if (_hudWindow != null) 
-                _hudWindow.OnStartWaveClicked -= StartWavePhase;
-
             _windowService.Close(WindowID.HUD);
-            
             _inputService.Disable();
             _inputService.OnCancelPerformed -= HandleEsc;
             _inputService.OnClickPerformed -= HandleClick;
-            _waveService.OnWaveStarted -= OnWaveStarted;
-        }
-
-        private void StartWavePhase()
-        {
-            if (_isWaveActive) return;
-            
-            _isWaveActive = true;
-            _hudWindow.SetStartButtonVisible(false);
-            _waveService.StartLevel();
-        }
-
-        private void OnWaveStarted(int waveIndex)
-        {
-            _hudWindow.SetWaveInfo(waveIndex);
         }
 
         private void HandleClick()
         {
-            if (_currentPossessedPlant != null) return;
+            if (Time.time < _nextModeSwitchTime) return;
 
-            if (_currentPossessedPlant != null) return;
+            if (_isInPossessionMode) return;
 
             Vector2 mousePos = _inputService.GetPointerPosition();
             Ray ray = UnityEngine.Camera.main.ScreenPointToRay(mousePos);
@@ -110,7 +91,7 @@ namespace Core.States
                             EnterPossessionMode(cannon);
                         }
                     }
-                    else if (!_isWaveActive) 
+                    else
                     {
                         _plantingService.TryPlantAtCursor();
                     }
@@ -120,35 +101,53 @@ namespace Core.States
 
         private void HandleEsc()
         {
-            if (_currentPossessedPlant != null)
-            {
-                EnterTacticalMode();
-            }
+            if (Time.time < _nextModeSwitchTime) return;
+
+            EnterPlantingMode();
         }
 
-        private async void EnterTacticalMode()
+        private void EnterPlantingMode()
         {
+            if (!_isInPossessionMode && _currentPossessedPlant == null)
+            {
+                _plantingService.ClearSelection();
+            }
+            else
+            {
+                _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
+            }
+            
+            _hudWindow.SetActiveCannon(null);
+
             if (_currentPossessedPlant != null)
             {
                 _currentPossessedPlant.SetPossessed(false);
                 _currentPossessedPlant = null;
             }
 
+            _isInPossessionMode = false;
+            _plantingService.ClearSelection(); 
+
             _cameraService.SetTacticalView(_levelProvider.CurrentLevel.CameraTacticalPoint);
-            _hudWindow.ToggleControls(true);
-            
-            if (!_isWaveActive) 
-                _hudWindow.SetStartButtonVisible(true);
+            _hudWindow.SetGameplayVisibility(true);
         }
 
         private async void EnterPossessionMode(CannonController plant)
         {
+            _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
+            _isInPossessionMode = true;
             _currentPossessedPlant = plant;
-            _currentPossessedPlant.SetPossessed(true);
             
-            _hudWindow.ToggleControls(false); 
+            _plantingService.ClearSelection();
+            
+            _hudWindow.SetGameplayVisibility(false);
+            _hudWindow.SetActiveCannon(plant);
             
             await _cameraService.MoveToTarget(plant.CameraMountPoint);
+            
+            plant.SetPossessed(true);
+
+            if (!_waveInProgress) _waveService.StartLevel();
         }
     }
 }

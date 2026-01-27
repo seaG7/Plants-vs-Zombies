@@ -1,16 +1,16 @@
-﻿using Cysharp.Threading.Tasks;
+﻿// ===== Features/Cannon/CannonController.cs =====
+using System;
+using Cysharp.Threading.Tasks;
 using Data.Configs;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
 using Zenject;
+using Random = UnityEngine.Random;
 
 namespace Features.Cannon
 {
-    /// <summary>
-    /// Controls static plant rotation and firing using injected data.
-    /// </summary>
     public class CannonController : MonoBehaviour
     {
         [Header("References")]
@@ -22,6 +22,9 @@ namespace Features.Cannon
         
         public Transform CameraMountPoint => _cameraMountPoint;
 
+        public event Action OnFireSuccess;
+        public event Action OnFireFailedCooldown;
+
         private IInputService _inputService;
         private IGameObjectFactory _factory;
         private PlantData _config;
@@ -29,6 +32,8 @@ namespace Features.Cannon
         private bool _isPossessed;
         private float _currentYaw;
         private float _currentPitch;
+        
+        private float _lastFireTime = -999f;
 
         [Inject]
         public void Construct(IInputService inputService, IGameObjectFactory factory)
@@ -40,6 +45,11 @@ namespace Features.Cannon
         public void Initialize(PlantData config)
         {
             _config = config;
+            if (_config.trajectoryMaterial != null)
+            {
+                _visualizer.SetMaterial(_config.trajectoryMaterial);
+                _visualizer.SetWidth(_config.trajectoryWidth);
+            }
         }
 
         private void Start()
@@ -70,18 +80,29 @@ namespace Features.Cannon
                 _visualizer.Clear();
             }
         }
+        public float GetReloadProgress()
+        {
+            float timeSinceFire = Time.time - _lastFireTime;
+            return Mathf.Clamp01(timeSinceFire / _config.fireCooldown);
+        }
+
+        public bool IsReadyToFire() => GetReloadProgress() >= 1f;
 
         private void HandleAiming()
         {
-            Vector2 input = _inputService.GetAimInput();
+            Vector2 keyInput = _inputService.GetAimInput();
 
-            if (input.sqrMagnitude > Mathf.Epsilon)
+            Vector2 mouseInput = _inputService.GetLookDelta();
+            
+            float inputX = (keyInput.x * _config.rotationSpeed * Time.deltaTime) + (mouseInput.x * _config.mouseSensitivity);
+            float inputY = (keyInput.y * _config.rotationSpeed * Time.deltaTime) + (mouseInput.y * _config.mouseSensitivity);
+
+            if (Mathf.Abs(inputX) > Mathf.Epsilon || Mathf.Abs(inputY) > Mathf.Epsilon)
             {
-                float yawDelta = input.x * _config.rotationSpeed * Time.deltaTime;
-                _currentYaw = Mathf.Clamp(_currentYaw + yawDelta, _config.minYaw, _config.maxYaw);
+                _currentYaw = Mathf.Clamp(_currentYaw + inputX, _config.minYaw, _config.maxYaw);
                 _horizontalAxis.localRotation = Quaternion.Euler(0, _currentYaw, 0);
                 
-                float pitchDelta = -input.y * _config.rotationSpeed * Time.deltaTime; 
+                float pitchDelta = -inputY; 
                 _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _config.minPitch, _config.maxPitch);
                 _verticalAxis.localRotation = Quaternion.Euler(_currentPitch, 0, 0);
             }
@@ -97,11 +118,23 @@ namespace Features.Cannon
         private void HandleFireInput()
         {
             if (_isPossessed && _config != null)
-                Fire();
+            {
+                if (IsReadyToFire())
+                {
+                    Fire();
+                }
+                else
+                {
+                    OnFireFailedCooldown?.Invoke();
+                }
+            }
         }
 
         private async void Fire()
         {
+            _lastFireTime = Time.time;
+            OnFireSuccess?.Invoke();
+
             float currentMass = Random.Range(_config.projectileMass * 0.95f, _config.projectileMass * 1.05f);
 
             var projectileObj = await _factory.InstantiateAsync(_config.projectileAsset, _muzzle.position, Quaternion.identity);
