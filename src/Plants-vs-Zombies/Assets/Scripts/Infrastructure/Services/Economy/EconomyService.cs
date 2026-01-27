@@ -6,7 +6,7 @@ using Zenject;
 
 namespace Infrastructure.Services.Economy
 {
-    public class EconomyService : IEconomyService, ITickable, IInitializable
+    public class EconomyService : IEconomyService, ITickable
     {
         private readonly IStaticDataProvider _staticData;
         
@@ -64,6 +64,13 @@ namespace Infrastructure.Services.Economy
                 AddSun(_settings.passiveIncomeAmount);
                 _timer = 0f;
             }
+        }
+        
+        public void Reset()
+        {
+            _isIncomeActive = false;
+            _timer = 0f;
+            Initialize();
         }
     }
 }

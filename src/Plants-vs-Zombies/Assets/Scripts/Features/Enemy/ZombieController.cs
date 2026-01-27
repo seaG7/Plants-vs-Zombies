@@ -31,15 +31,20 @@ namespace Features.Enemy
         public void Initialize()
         {
             _isAlive = true;
-            
             _animation.PlayWalk();
         }
 
         private void Update()
         {
             if (!_isAlive) return;
-
             Move();
+        }
+
+        public void StopMovement()
+        {
+            _isAlive = false;
+            _characterController.enabled = false;
+            _animation.Stop();
         }
 
         public void TakeDamage(float damage)

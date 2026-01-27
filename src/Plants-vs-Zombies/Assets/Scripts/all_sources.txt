@@ -190,42 +190,155 @@ timeCreated: 1769388269
 
 // ===== Core/States/GameplayState.cs =====
 ﻿using Core.BaseStates;
+using Features.Cannon;
+using Infrastructure.Providers.Context;
 using Infrastructure.Services;
+using Infrastructure.Services.Camera;
+using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
+using Infrastructure.Services.Planting;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
+using UI.HUD;
+using UnityEngine;
 
 namespace Core.States
 {
-    /// <summary>
-    /// State responsible for the active gameplay loop.
-    /// </summary>
     public class GameplayState : IState, IEnterable, IExitable
     {
         private readonly IWindowService _windowService;
         private readonly IInputService _inputService;
-        private readonly IWaveService _waveService;
+        private readonly ICameraService _cameraService;
+        private readonly ILevelProvider _levelProvider;
+        private readonly IPlantingService _plantingService;
+        private readonly IGridService _gridService;
 
-        public GameplayState(IWindowService windowService, IInputService inputService, IWaveService waveService)
+        private HudWindow _hudWindow;
+        private CannonController _currentPossessedPlant;
+        private bool _isInPossessionMode;
+        private bool _waveInProgress = false;
+        
+        private float _nextModeSwitchTime;
+        private readonly IWaveService _waveService;
+        private const float SWITCH_COOLDOWN = 0.5f;
+
+        public GameplayState(
+            IWindowService windowService, 
+            IInputService inputService, 
+            ICameraService cameraService,
+            ILevelProvider levelProvider,
+            IPlantingService plantingService,
+            IGridService gridService,
+            IWaveService waveService)
         {
             _windowService = windowService;
             _inputService = inputService;
+            _cameraService = cameraService;
+            _levelProvider = levelProvider;
+            _plantingService = plantingService;
+            _gridService = gridService;
             _waveService = waveService;
         }
 
         public async void Enter()
         {
-            await _windowService.Open(WindowID.HUD);
+            _hudWindow = await _windowService.OpenAndGet<HudWindow>(WindowID.HUD);
             
             _inputService.Enable();
+            _inputService.OnCancelPerformed += HandleEsc;
+            _inputService.OnClickPerformed += HandleClick;
             
-            _waveService.StartLevel();
+            _plantingService.Initialize();
+            EnterPlantingMode();
         }
 
         public void Exit()
         {
             _windowService.Close(WindowID.HUD);
             _inputService.Disable();
+            _inputService.OnCancelPerformed -= HandleEsc;
+            _inputService.OnClickPerformed -= HandleClick;
+        }
+
+        private void HandleClick()
+        {
+            if (Time.time < _nextModeSwitchTime) return;
+
+            if (_isInPossessionMode) return;
+
+            Vector2 mousePos = _inputService.GetPointerPosition();
+            Ray ray = UnityEngine.Camera.main.ScreenPointToRay(mousePos);
+
+            if (UnityEngine.Physics.Raycast(ray, out RaycastHit hit, 1000f))
+            {
+                if (_gridService.WorldToGrid(hit.point, out int lane, out int row))
+                {
+                    if (_gridService.IsCellOccupied(lane, row))
+                    {
+                        var plantObj = _gridService.GetPlantAt(lane, row);
+                        var cannon = plantObj.GetComponent<CannonController>();
+                        if (cannon != null)
+                        {
+                            EnterPossessionMode(cannon);
+                        }
+                    }
+                    else
+                    {
+                        _plantingService.TryPlantAtCursor();
+                    }
+                }
+            }
+        }
+
+        private void HandleEsc()
+        {
+            if (Time.time < _nextModeSwitchTime) return;
+
+            EnterPlantingMode();
+        }
+
+        private void EnterPlantingMode()
+        {
+            if (!_isInPossessionMode && _currentPossessedPlant == null)
+            {
+                _plantingService.ClearSelection();
+            }
+            else
+            {
+                _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
+            }
+            
+            _hudWindow.SetActiveCannon(null);
+
+            if (_currentPossessedPlant != null)
+            {
+                _currentPossessedPlant.SetPossessed(false);
+                _currentPossessedPlant = null;
+            }
+
+            _isInPossessionMode = false;
+            _plantingService.ClearSelection(); 
+
+            _cameraService.SetTacticalView(_levelProvider.CurrentLevel.CameraTacticalPoint);
+            _hudWindow.SetGameplayVisibility(true);
+        }
+
+        private async void EnterPossessionMode(CannonController plant)
+        {
+            _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
+            _isInPossessionMode = true;
+            _currentPossessedPlant = plant;
+            
+            _plantingService.ClearSelection();
+            
+            _hudWindow.SetGameplayVisibility(false);
+            _hudWindow.SetActiveCannon(plant);
+            
+            await _cameraService.MoveToTarget(plant.CameraMountPoint);
+            
+            plant.SetPossessed(true);
+
+            if (!_waveInProgress) _waveService.StartLevel();
         }
     }
 }
@@ -258,8 +371,6 @@ namespace Core.States
 
         public async void Enter()
         {
-            _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
-            
             _sceneInstance = await _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
             
             _stateMachine.ChangeState<GameplayState>();
@@ -409,9 +520,7 @@ guid: 4d2dc72ad6c249798e2d1bd66eb00b22
 timeCreated: 1769460745
 
 // ===== Data/Configs/PlantData.cs =====
-﻿using System.Collections.Generic;
-using Data.Enums;
-using UnityEditor;
+﻿using Data.Enums;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
@@ -421,7 +530,6 @@ namespace Data.Configs
     public class PlantData : ScriptableObject
     {
         [Header("General Info")]
-        [Tooltip("Unique ID auto-generated")]
         public int id;
         public PlantType type;
         public string plantName;
@@ -433,41 +541,35 @@ namespace Data.Configs
 
         [Header("Economy")]
         [Min(0)] public int cost;
-        [Tooltip("Cooldown in seconds between planting")]
-        public float cooldown = 5f;
-
-        [Header("Combat Stats")]
-        public float health = 100f;
-        public float attackRange = 10f;
-        public float attackRate = 1.5f;
+        
+        [Header("Cannon Physics")]
+        public AssetReference projectileAsset;
+        public Material trajectoryMaterial;
+        public float trajectoryWidth;
+        public float impactRadius = 1.5f;
+        public float fireCooldown = 4f;
+        public float rotationSpeed = 25f;
+        public float mouseSensitivity = 0.05f;
+        public float initialSpeed = 100f;
+        public float minPitch = -30f;
+        public float maxPitch = 30f;
+        public float minYaw = -45f;
+        public float maxYaw = 45f;
+        
+        [Header("Projectile Config")]
+        public float projectileMass = 4f;
+        public float projectileRadius = 0.2f;
+        public float dragCoeff = 0.47f;
+        public float airDensity = 1.225f;
+        public Vector3 wind = Vector3.zero;
 
 #if UNITY_EDITOR
-        private void Reset()
-        {
-            AssignUniqueId();
-        }
+        private void Reset() => AssignUniqueId();
 
         [ContextMenu("Recalculate ID")]
         private void AssignUniqueId()
         {
-            string[] guids = AssetDatabase.FindAssets("t:PlantData");
-            HashSet<int> usedIds = new HashSet<int>();
-
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                PlantData data = AssetDatabase.LoadAssetAtPath<PlantData>(path);
-                if (data != null && data != this) usedIds.Add(data.id);
-            }
-
-            int nextId = 1;
-            while (usedIds.Contains(nextId)) nextId++;
-
-            if (id != nextId)
-            {
-                id = nextId;
-                EditorUtility.SetDirty(this);
-            }
+            id = Mathf.Abs(GetInstanceID()); 
         }
 #endif
     }
@@ -577,18 +679,19 @@ guid: aff8da10302e4d4b835e52b48e042164
 timeCreated: 1769440039
 
 // ===== Features/Cannon/CannonController.cs =====
-﻿using Infrastructure.Factories.Objects;
+﻿// ===== Features/Cannon/CannonController.cs =====
+using System;
+using Cysharp.Threading.Tasks;
+using Data.Configs;
+using Infrastructure.Factories.Objects;
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 using Zenject;
+using Random = UnityEngine.Random;
 
 namespace Features.Cannon
 {
-    /// <summary>
-    /// Controls static plant rotation (WASD) and firing (Space).
-    /// </summary>
     public class CannonController : MonoBehaviour
     {
         [Header("References")]
@@ -596,34 +699,22 @@ namespace Features.Cannon
         [SerializeField] private Transform _horizontalAxis;
         [SerializeField] private Transform _verticalAxis;
         [SerializeField] private TrajectoryVisualizer _visualizer;
-        
-        [Header("Settings")]
-        [SerializeField] private AssetReference _projectileAsset;
-        [SerializeField] private float _rotationSpeed = 45f;
-        [SerializeField] private float _initialSpeed = 20f;
-
-        [SerializeField] private float _minPitch = -10f;
-        [SerializeField] private float _maxPitch = 45f;
-        [SerializeField] private float _minYaw = -45f;
-        [SerializeField] private float _maxYaw = 45f;
-        
-        [Header("Physics Config")]
-        [SerializeField] private float _mass = 2f;
-        [SerializeField] private float _radius = 0.2f;
-        [SerializeField] private float _dragCoeff = 0.47f;
-        [SerializeField] private float _airDensity = 1.225f;
-        [SerializeField] private Vector3 _wind = Vector3.zero;
-        
-        [Header("Camera")]
         [SerializeField] private Transform _cameraMountPoint; 
+        
         public Transform CameraMountPoint => _cameraMountPoint;
+
+        public event Action OnFireSuccess;
+        public event Action OnFireFailedCooldown;
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
-        private bool _isActive;
-
+        private PlantData _config;
+        
+        private bool _isPossessed;
         private float _currentYaw;
         private float _currentPitch;
+        
+        private float _lastFireTime = -999f;
 
         [Inject]
         public void Construct(IInputService inputService, IGameObjectFactory factory)
@@ -632,10 +723,20 @@ namespace Features.Cannon
             _factory = factory;
         }
 
+        public void Initialize(PlantData config)
+        {
+            _config = config;
+            if (_config.trajectoryMaterial != null)
+            {
+                _visualizer.SetMaterial(_config.trajectoryMaterial);
+                _visualizer.SetWidth(_config.trajectoryWidth);
+            }
+        }
+
         private void Start()
         {
-            _isActive = true; 
             _inputService.OnFirePerformed += HandleFireInput;
+            SetPossessed(false);
         }
 
         private void OnDestroy()
@@ -646,7 +747,7 @@ namespace Features.Cannon
 
         private void Update()
         {
-            if (!_isActive) return;
+            if (!_isPossessed || _config == null) return;
 
             HandleAiming();
             UpdateTrajectory();
@@ -654,58 +755,77 @@ namespace Features.Cannon
         
         public void SetPossessed(bool isPossessed)
         {
-            SetControlActive(isPossessed);
-        }
-
-        public void SetControlActive(bool isActive)
-        {
-            _isActive = isActive;
-            if (!_isActive)
+            _isPossessed = isPossessed;
+            if (!_isPossessed)
             {
                 _visualizer.Clear();
             }
         }
+        public float GetReloadProgress()
+        {
+            float timeSinceFire = Time.time - _lastFireTime;
+            return Mathf.Clamp01(timeSinceFire / _config.fireCooldown);
+        }
+
+        public bool IsReadyToFire() => GetReloadProgress() >= 1f;
 
         private void HandleAiming()
         {
-            Vector2 input = _inputService.GetAimInput();
+            Vector2 keyInput = _inputService.GetAimInput();
 
-            if (input.sqrMagnitude > Mathf.Epsilon)
+            Vector2 mouseInput = _inputService.GetLookDelta();
+            
+            float inputX = (keyInput.x * _config.rotationSpeed * Time.deltaTime) + (mouseInput.x * _config.mouseSensitivity);
+            float inputY = (keyInput.y * _config.rotationSpeed * Time.deltaTime) + (mouseInput.y * _config.mouseSensitivity);
+
+            if (Mathf.Abs(inputX) > Mathf.Epsilon || Mathf.Abs(inputY) > Mathf.Epsilon)
             {
-                float yawDelta = input.x * _rotationSpeed * Time.deltaTime;
-                _currentYaw = Mathf.Clamp(_currentYaw + yawDelta, _minYaw, _maxYaw);
+                _currentYaw = Mathf.Clamp(_currentYaw + inputX, _config.minYaw, _config.maxYaw);
                 _horizontalAxis.localRotation = Quaternion.Euler(0, _currentYaw, 0);
                 
-                float pitchDelta = -input.y * _rotationSpeed * Time.deltaTime; 
-                _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _minPitch, _maxPitch);
+                float pitchDelta = -inputY; 
+                _currentPitch = Mathf.Clamp(_currentPitch + pitchDelta, _config.minPitch, _config.maxPitch);
                 _verticalAxis.localRotation = Quaternion.Euler(_currentPitch, 0, 0);
             }
         }
 
         private void UpdateTrajectory()
         {
-            Vector3 startVel = _muzzle.forward * _initialSpeed;
-            _visualizer.SimulateTrajectory(_muzzle.position, startVel, _mass, _radius, _dragCoeff, _airDensity, _wind);
+            Vector3 startVel = _muzzle.forward * _config.initialSpeed;
+            _visualizer.SimulateTrajectory(_muzzle.position, startVel, _config.projectileMass, 
+                _config.projectileRadius, _config.dragCoeff, _config.airDensity, _config.wind);
         }
 
         private void HandleFireInput()
         {
-            if (_isActive)
-                Fire();
+            if (_isPossessed && _config != null)
+            {
+                if (IsReadyToFire())
+                {
+                    Fire();
+                }
+                else
+                {
+                    OnFireFailedCooldown?.Invoke();
+                }
+            }
         }
 
         private async void Fire()
         {
-            float currentMass = Random.Range(_mass * 0.95f, _mass * 1.05f);
+            _lastFireTime = Time.time;
+            OnFireSuccess?.Invoke();
 
-            var projectileObj = await _factory.InstantiateAsync(_projectileAsset, _muzzle.position, Quaternion.identity);
+            float currentMass = Random.Range(_config.projectileMass * 0.95f, _config.projectileMass * 1.05f);
 
+            var projectileObj = await _factory.InstantiateAsync(_config.projectileAsset, _muzzle.position, Quaternion.identity);
             var physicsComp = projectileObj.GetComponent<PhysicsProjectile>();
             
             if (physicsComp != null)
             {
-                Vector3 startVel = _muzzle.forward * _initialSpeed;
-                physicsComp.Initialize(currentMass, _radius, _dragCoeff, _airDensity, _wind, startVel);
+                Vector3 startVel = _muzzle.forward * _config.initialSpeed;
+                physicsComp.Initialize(currentMass, _config.projectileRadius, _config.dragCoeff, 
+                    _config.airDensity, _config.wind, startVel);
             }
         }
     }
@@ -725,6 +845,7 @@ timeCreated: 1769451114
 ﻿using System.Collections.Generic;
 using Core.Interfaces;
 using Infrastructure.Providers.Context;
+using Infrastructure.Services.Waves;
 using UnityEngine;
 using Zenject;
 
@@ -735,6 +856,10 @@ namespace Features.Context
     /// </summary>
     public class LevelContext : MonoBehaviour
     {
+        [Header("Debug")]
+        [Tooltip("Toggle this to force start the waves immediately.")]
+        public bool ForceStartWaves;
+
         [Header("Anchors")]
         [SerializeField] private Transform _originPoint;
 
@@ -748,6 +873,7 @@ namespace Features.Context
         [SerializeField] private int _rowsCount = 1;
 
         private ILevelProvider _levelProvider;
+        private IWaveService _waveService;
         
         private readonly List<IDamageable> _activeEnemies = new();
 
@@ -767,14 +893,25 @@ namespace Features.Context
         public Transform CameraTacticalPoint => _cameraTacticalPoint;
 
         [Inject]
-        public void Construct(ILevelProvider levelProvider)
+        public void Construct(ILevelProvider levelProvider, IWaveService waveService)
         {
             _levelProvider = levelProvider;
+            _waveService = waveService;
         }
 
         private void Awake()
         {
             _levelProvider.SetLevel(this);
+        }
+
+        private void Update()
+        {
+            if (ForceStartWaves)
+            {
+                ForceStartWaves = false;
+                Debug.Log("[LevelContext] Force starting waves via Inspector...");
+                _waveService.StartLevel();
+            }
         }
 
         private void OnDestroy()
@@ -967,6 +1104,254 @@ namespace Features.Enemy
 ﻿fileFormatVersion: 2
 guid: 24fa2672311f436e9f408df0f3643d25
 timeCreated: 1769447128
+
+// ===== Features/Visuals.meta =====
+﻿fileFormatVersion: 2
+guid: 76519798c075448db465ccedba5cd9c2
+timeCreated: 1769479037
+
+// ===== Features/Visuals/GridCellHighlighter.cs =====
+﻿using UnityEngine;
+
+namespace Features.Visuals
+{
+    [RequireComponent(typeof(LineRenderer))]
+    public class GridCellHighlighter : MonoBehaviour
+    {
+        private LineRenderer _lineRenderer;
+        private const float HEIGHT_OFFSET = 0.05f; 
+
+        private void Awake()
+        {
+            _lineRenderer = GetComponent<LineRenderer>();
+            _lineRenderer.useWorldSpace = true;
+            _lineRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _lineRenderer.receiveShadows = false;
+            
+            if (_lineRenderer.material == null)
+                 _lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
+
+            Hide();
+        }
+
+        public void SetMaterial(Material material)
+        {
+            if (material == null) return;
+            if (_lineRenderer == null) Awake();
+            _lineRenderer.material = material;
+        }
+
+        public void SetStyle(float width, Color color, int sortingOrder = 0)
+        {
+            if (_lineRenderer == null) Awake();
+            
+            _lineRenderer.startWidth = width;
+            _lineRenderer.endWidth = width;
+            _lineRenderer.startColor = color;
+            _lineRenderer.endColor = color;
+            _lineRenderer.sortingOrder = sortingOrder;
+        }
+
+        public void Show(Vector3 centerPos, float width, float length)
+        {
+            _lineRenderer.enabled = true;
+            _lineRenderer.loop = true;
+            _lineRenderer.positionCount = 5;
+
+            float halfWidth = width / 2f;
+            float halfLength = length / 2f;
+            float y = centerPos.y + HEIGHT_OFFSET;
+
+            Vector3[] points = new Vector3[5];
+            points[0] = new Vector3(centerPos.x - halfWidth, y, centerPos.z - halfLength);
+            points[1] = new Vector3(centerPos.x - halfWidth, y, centerPos.z + halfLength);
+            points[2] = new Vector3(centerPos.x + halfWidth, y, centerPos.z + halfLength);
+            points[3] = new Vector3(centerPos.x + halfWidth, y, centerPos.z - halfLength);
+            points[4] = points[0];
+
+            _lineRenderer.SetPositions(points);
+        }
+
+        public void ShowLine(Vector3 start, Vector3 end)
+        {
+            _lineRenderer.enabled = true;
+            _lineRenderer.loop = false;
+            _lineRenderer.positionCount = 2;
+            
+            float y = start.y + HEIGHT_OFFSET;
+            _lineRenderer.SetPosition(0, new Vector3(start.x, y, start.z));
+            _lineRenderer.SetPosition(1, new Vector3(end.x, y, end.z));
+        }
+
+        public void Hide()
+        {
+            if (_lineRenderer != null)
+                _lineRenderer.enabled = false;
+        }
+    }
+}
+
+// ===== Features/Visuals/GridCellHighlighter.cs.meta =====
+﻿fileFormatVersion: 2
+guid: fd5deddcf005442b8a7e227ca95c818a
+timeCreated: 1769471750
+
+// ===== Features/Visuals/GridVisualizer.cs =====
+﻿using System.Collections.Generic;
+using Infrastructure.Providers.Context;
+using Infrastructure.Services.Grid;
+using UnityEngine;
+
+namespace Features.Visuals
+{
+    public class GridVisualizer : MonoBehaviour
+    {
+        private const string CURSOR_MAT_PATH = "Materials/GridMaterial"; 
+        private const string GRID_MAT_PATH = "Materials/SelectedCellMaterial";
+
+        private GridCellHighlighter _cursorHighlighter;
+        private readonly List<GridCellHighlighter> _staticGrid = new();
+        private readonly List<GridCellHighlighter> _laneLines = new();
+        
+        private Transform _container;
+        private Material _cursorMaterial;
+        private Material _gridMaterial;
+
+        private readonly Color _staticColor = new Color(0, 1, 0, 0.3f);
+        private readonly Color _cursorValidColor = new Color(0, 1, 0, 1.0f);
+        private readonly Color _cursorInvalidColor = new Color(1, 0, 0, 1.0f);
+        
+        private const float STATIC_WIDTH = 0.35f;
+        private const float CURSOR_WIDTH = 0.7f;
+
+        public void Initialize()
+        {
+            _container = new GameObject("GridVisuals_Container").transform;
+            _container.SetParent(transform);
+
+            LoadMaterials();
+
+            _cursorHighlighter = CreateHighlighter("Cursor");
+            _cursorHighlighter.SetMaterial(_cursorMaterial);
+            _cursorHighlighter.SetStyle(CURSOR_WIDTH, _cursorValidColor, sortingOrder: 10);
+        }
+
+        private void LoadMaterials()
+        {
+            _cursorMaterial = Resources.Load<Material>(CURSOR_MAT_PATH);
+            _gridMaterial = Resources.Load<Material>(GRID_MAT_PATH);
+
+            if (_cursorMaterial == null) Debug.LogError($"[GridVisualizer] Material not found at Resources/{CURSOR_MAT_PATH}");
+            if (_gridMaterial == null) Debug.LogError($"[GridVisualizer] Material not found at Resources/{GRID_MAT_PATH}");
+        }
+
+        public void ShowLaneLines(ILevelProvider levelProvider)
+        {
+            HideLaneLines();
+
+            var level = levelProvider.CurrentLevel;
+            if (level == null) return;
+
+            float totalWidth = level.LaneCount * level.LaneWidth;
+            float startX = -totalWidth / 2f;
+            Vector3 center = level.OriginPosition;
+            Quaternion rot = level.OriginRotation;
+
+            for (int i = 0; i <= level.LaneCount; i++)
+            {
+                var line = GetOrCreateLaneHighlighter();
+                line.SetMaterial(_gridMaterial);
+                line.SetStyle(STATIC_WIDTH, Color.white, sortingOrder: 0);
+
+                float xOffset = startX + (i * level.LaneWidth);
+                Vector3 startPos = center + rot * new Vector3(xOffset, 0, -level.RowsCount * level.CellLength);
+                Vector3 endPos = center + rot * new Vector3(xOffset, 0, level.ZombieSpawnDistance);
+                
+                line.ShowLine(startPos, endPos);
+            }
+        }
+
+        public void ShowStaticGrid(ILevelProvider levelProvider, IGridService gridService)
+        {
+            HideStaticGrid();
+            
+            var level = levelProvider.CurrentLevel;
+            if (level == null) return;
+
+            for (int lane = 0; lane < level.LaneCount; lane++)
+            {
+                for (int row = 0; row < level.RowsCount; row++)
+                {
+                    if (gridService.IsCellOccupied(lane, row)) continue;
+
+                    var highlighter = GetOrCreateStaticHighlighter();
+                    highlighter.SetMaterial(_gridMaterial); 
+                    highlighter.SetStyle(STATIC_WIDTH, _staticColor, sortingOrder: 1);
+                    
+                    Vector3 pos = gridService.GridToWorld(lane, row);
+                    highlighter.Show(pos, level.LaneWidth, level.CellLength);
+                }
+            }
+        }
+
+        public void UpdateCursor(Vector3 position, float width, float length, bool isValid)
+        {
+            Color color = isValid ? _cursorValidColor : _cursorInvalidColor;
+            
+            _cursorHighlighter.SetMaterial(_cursorMaterial);
+            _cursorHighlighter.SetStyle(CURSOR_WIDTH, color, sortingOrder: 10);
+            _cursorHighlighter.Show(position, width, length);
+        }
+
+        public void HideCursor() => _cursorHighlighter.Hide();
+        public void HideStaticGrid() { foreach (var h in _staticGrid) h.Hide(); }
+        public void HideLaneLines() { foreach (var h in _laneLines) h.Hide(); }
+
+        public void HideAllInteractive()
+        {
+            HideCursor();
+            HideStaticGrid();
+        }
+
+        private GridCellHighlighter GetOrCreateStaticHighlighter() => GetFromPool(_staticGrid, "StaticCell");
+        private GridCellHighlighter GetOrCreateLaneHighlighter() => GetFromPool(_laneLines, "LaneLine");
+
+        private GridCellHighlighter GetFromPool(List<GridCellHighlighter> pool, string namePrefix)
+        {
+            foreach (var h in pool)
+            {
+                if (!h) continue;
+                
+                if (!h.gameObject.activeSelf || !h.GetComponent<LineRenderer>().enabled)
+                {
+                    h.gameObject.SetActive(true);
+                    return h;
+                }
+            }
+            var newH = CreateHighlighter($"{namePrefix}_{pool.Count}");
+            pool.Add(newH);
+            return newH;
+        }
+
+        private GridCellHighlighter CreateHighlighter(string name)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(_container);
+            var lr = go.AddComponent<LineRenderer>();
+            return go.AddComponent<GridCellHighlighter>();
+        }
+
+        private void OnDestroy()
+        {
+            if (_container != null) Destroy(_container.gameObject);
+        }
+    }
+}
+
+// ===== Features/Visuals/GridVisualizer.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 790db878fd4c4481a4451688a4667b3f
+timeCreated: 1769479052
 
 // ===== Infrastructure.meta =====
 fileFormatVersion: 2
@@ -1341,12 +1726,14 @@ using Infrastructure.Factories.UI;
 using Infrastructure.Providers.AssetsAddressables;
 using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Camera;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.FPS;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
 using Infrastructure.Services.Lanes;
 using Infrastructure.Services.Physics;
+using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.UI;
 using Infrastructure.Services.Waves;
@@ -1393,6 +1780,8 @@ namespace Infrastructure.Installers
             Container.BindInterfacesAndSelfTo<WaveService>().AsSingle();
             
             Container.BindInterfacesAndSelfTo<EconomyService>().AsSingle();
+            Container.Bind<ICameraService>().To<CameraService>().AsSingle();
+            Container.BindInterfacesAndSelfTo<PlantingService>().AsSingle();
         }
 
         private void BindFactories()
@@ -1713,11 +2102,42 @@ guid: 503a8020ccd84a16b132ae5a8c369562
 timeCreated: 1769463234
 
 // ===== Infrastructure/Services/Camera/CameraService.cs =====
-﻿namespace Infrastructure.Services.Camera
+﻿using Cysharp.Threading.Tasks;
+using DG.Tweening;
+using UnityEngine;
+
+namespace Infrastructure.Services.Camera
 {
-    public class CameraService
+    public class CameraService : ICameraService
     {
-        
+        private Transform _mainCameraTransform;
+
+        public CameraService()
+        {
+            if (UnityEngine.Camera.main != null) 
+                _mainCameraTransform = UnityEngine.Camera.main.transform;
+        }
+
+        public async void SetTacticalView(Transform tacticalPoint, float duration = 1f)
+        {
+            if (_mainCameraTransform == null || tacticalPoint == null) return;
+            
+            _mainCameraTransform.DOMove(tacticalPoint.position, duration).SetEase(Ease.InOutSine);
+            _mainCameraTransform.DORotateQuaternion(tacticalPoint.rotation, duration).SetEase(Ease.InOutSine);
+
+            await UniTask.WaitForSeconds(1);
+        }
+
+        public async UniTask MoveToTarget(Transform target, float duration = 0.5f)
+        {
+            if (_mainCameraTransform == null || target == null) return;
+            
+            var sequence = DOTween.Sequence();
+            sequence.Join(_mainCameraTransform.DOMove(target.position, duration).SetEase(Ease.OutCubic));
+            sequence.Join(_mainCameraTransform.DORotateQuaternion(target.rotation, duration).SetEase(Ease.OutCubic));
+
+            await sequence.AsyncWaitForCompletion();
+        }
     }
 }
 
@@ -1734,7 +2154,7 @@ namespace Infrastructure.Services.Camera
 {
     public interface ICameraService
     {
-        void SetTacticalView();
+        void SetTacticalView(Transform tacticalPoint, float duration = 1f);
         UniTask MoveToTarget(Transform target, float duration = 0.5f);
     }
 }
@@ -1941,6 +2361,7 @@ namespace Infrastructure.Services.Grid
             laneIndex = -1;
             rowIndex = -1;
             var level = _levelProvider.CurrentLevel;
+            if (level == null) return false;
 
             Vector3 localPos = Quaternion.Inverse(level.OriginRotation) * (worldPos - level.OriginPosition);
 
@@ -1975,6 +2396,12 @@ namespace Infrastructure.Services.Grid
 
         public bool IsCellOccupied(int lane, int row) => _occupiedCells.ContainsKey(new Vector2Int(lane, row));
 
+        public GameObject GetPlantAt(int lane, int row)
+        {
+            var key = new Vector2Int(lane, row);
+            return _occupiedCells.TryGetValue(key, out var plant) ? plant : null;
+        }
+
         public bool TryOccupyCell(int lane, int row, GameObject plant)
         {
             var key = new Vector2Int(lane, row);
@@ -2005,13 +2432,10 @@ namespace Infrastructure.Services.Grid
 {
     public interface IGridService
     {
-        // Converts world click to grid coordinates (Lane Index, Row Index)
         bool WorldToGrid(Vector3 worldPos, out int laneIndex, out int rowIndex);
-        
-        // Converts grid coordinates to World Position (center of cell)
         Vector3 GridToWorld(int laneIndex, int rowIndex);
-        
         bool IsCellOccupied(int lane, int row);
+        GameObject GetPlantAt(int lane, int row);
         bool TryOccupyCell(int lane, int row, GameObject plant);
         void ReleaseCell(int lane, int row);
     }
@@ -2036,6 +2460,7 @@ namespace Infrastructure.Services.Input
     public interface IInputService
     {
         Vector2 GetAimInput();
+        Vector2 GetLookDelta();
         bool IsFirePressed();
 
         Vector2 GetPointerPosition();
@@ -2084,6 +2509,9 @@ namespace Infrastructure.Services.Input
 
         public Vector2 GetAimInput() => 
             _inputActions.Gameplay.Aim.ReadValue<Vector2>();
+        
+        public Vector2 GetLookDelta() =>
+            Mouse.current != null ? Mouse.current.delta.ReadValue() : Vector2.zero;
 
         public Vector2 GetPointerPosition() => 
             Mouse.current.position.ReadValue();
@@ -2290,14 +2718,18 @@ guid: 63f3126914d341e9b15af1bcdc3db1cb
 timeCreated: 1769458860
 
 // ===== Infrastructure/Services/Planting/IPlantingService.cs =====
-﻿using Data.Enums;
+﻿using System;
+using Data.Enums;
 
 namespace Infrastructure.Services.Planting
 {
     public interface IPlantingService
     {
+        event Action<PlantType> OnPlantSelected;
         void SelectPlant(PlantType type);
         void TryPlantAtCursor();
+        void ClearSelection();
+        void Initialize();
     }
 }
 
@@ -2307,8 +2739,12 @@ guid: 8d13618a5f0f4c8a81ae822e7bbc757d
 timeCreated: 1769458872
 
 // ===== Infrastructure/Services/Planting/PlantingService.cs =====
-﻿using Data.Enums;
+﻿using System;
+using Data.Enums;
+using Features.Cannon;
+using Features.Visuals;
 using Infrastructure.Factories.Objects;
+using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
@@ -2318,42 +2754,55 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
-    public class PlantingService : IPlantingService, IInitializable, System.IDisposable
+    public class PlantingService : IPlantingService, IInitializable, IDisposable, ITickable
     {
+        public event Action<PlantType> OnPlantSelected;
+
         private readonly IInputService _inputService;
         private readonly IGridService _gridService;
         private readonly IEconomyService _economyService;
         private readonly IGameObjectFactory _factory;
         private readonly IStaticDataProvider _staticData;
+        private readonly ILevelProvider _levelProvider;
 
         private PlantType _selectedPlantType = PlantType.None;
+        private GridVisualizer _visualizer;
 
         public PlantingService(
             IInputService inputService, 
             IGridService gridService, 
             IEconomyService economyService,
             IGameObjectFactory factory,
-            IStaticDataProvider staticData)
+            IStaticDataProvider staticData,
+            ILevelProvider levelProvider)
         {
             _inputService = inputService;
             _gridService = gridService;
             _economyService = economyService;
             _factory = factory;
             _staticData = staticData;
+            _levelProvider = levelProvider;
         }
 
         public void Initialize()
         {
-            _inputService.OnClickPerformed += TryPlantAtCursor;
+            var go = new GameObject("Planting_GridVisualizer");
+            _visualizer = go.AddComponent<GridVisualizer>();
+            _visualizer.Initialize();
+            
+            _levelProvider.OnLevelLoaded += () => _visualizer.ShowLaneLines(_levelProvider);
+            if (_levelProvider.CurrentLevel != null) _visualizer.ShowLaneLines(_levelProvider);
+
             _inputService.OnHotbarHotkeyPressed += OnHotbarPressed;
-            _inputService.OnCancelPerformed += Deselect;
+            _inputService.OnCancelPerformed += ClearSelection;
         }
 
         public void Dispose()
         {
-            _inputService.OnClickPerformed -= TryPlantAtCursor;
+            _levelProvider.OnLevelLoaded -= () => _visualizer.ShowLaneLines(_levelProvider);
             _inputService.OnHotbarHotkeyPressed -= OnHotbarPressed;
-            _inputService.OnCancelPerformed -= Deselect;
+            _inputService.OnCancelPerformed -= ClearSelection;
+            if (_visualizer != null) UnityEngine.Object.Destroy(_visualizer.gameObject);
         }
 
         private void OnHotbarPressed(int slotIndex)
@@ -2365,12 +2814,44 @@ namespace Infrastructure.Services.Planting
         public void SelectPlant(PlantType type)
         {
             _selectedPlantType = type;
-            Debug.Log($"[PlantingService] Selected: {type}");
+            OnPlantSelected?.Invoke(type);
+
+            if (type != PlantType.None)
+                _visualizer.ShowStaticGrid(_levelProvider, _gridService);
+            else
+                _visualizer.HideAllInteractive(); // Прячем курсор и ячейки, но НЕ линии лайнов
         }
-        
-        private void Deselect()
+
+        public void ClearSelection()
         {
-            _selectedPlantType = PlantType.None;
+            SelectPlant(PlantType.None);
+        }
+
+        public void Tick()
+        {
+            if (_selectedPlantType == PlantType.None) return;
+            UpdateCursorHighlight();
+        }
+
+        private void UpdateCursorHighlight()
+        {
+            Vector2 mousePos = _inputService.GetPointerPosition();
+            Ray ray = UnityEngine.Camera.main.ScreenPointToRay(mousePos);
+
+            if (UnityEngine.Physics.Raycast(ray, out RaycastHit hit, 1000f,
+                    LayerMask.GetMask("Default", "Ground")))
+            {
+                if (_gridService.WorldToGrid(hit.point, out int lane, out int row))
+                {
+                    bool isOccupied = _gridService.IsCellOccupied(lane, row);
+                    Vector3 cellCenter = _gridService.GridToWorld(lane, row);
+                    var level = _levelProvider.CurrentLevel;
+                    
+                    _visualizer.UpdateCursor(cellCenter, level.LaneWidth, level.CellLength, !isOccupied);
+                    return;
+                }
+            }
+            _visualizer.HideCursor();
         }
 
         public async void TryPlantAtCursor()
@@ -2383,28 +2864,25 @@ namespace Infrastructure.Services.Planting
             Vector2 mousePos = _inputService.GetPointerPosition();
             Ray ray = UnityEngine.Camera.main.ScreenPointToRay(mousePos);
 
-            if (UnityEngine.Physics.Raycast(ray, out RaycastHit hit, 1000f, LayerMask.GetMask("Default", "Ground")))
+            if (UnityEngine.Physics.Raycast(ray, out RaycastHit hit, 1000f,
+                    LayerMask.GetMask("Default", "Ground")))
             {
                 if (_gridService.WorldToGrid(hit.point, out int lane, out int row))
                 {
-                    if (_gridService.IsCellOccupied(lane, row))
-                    {
-                        Debug.Log("Cell Occupied!");
-                        return;
-                    }
+                    if (_gridService.IsCellOccupied(lane, row)) return;
 
                     if (_economyService.TrySpendSun(plantData.cost))
                     {
                         Vector3 buildPos = _gridService.GridToWorld(lane, row);
                         GameObject plantObj = await _factory.InstantiateAsync(plantData.prefabReference, buildPos, Quaternion.identity);
                         
+                        var cannon = plantObj.GetComponent<CannonController>();
+                        if (cannon != null) cannon.Initialize(plantData);
+                        
                         _gridService.TryOccupyCell(lane, row, plantObj);
                         
-                        _selectedPlantType = PlantType.None; 
-                    }
-                    else
-                    {
-                        Debug.Log("Not enough sun!");
+                        _visualizer.ShowStaticGrid(_levelProvider, _gridService);
+                        ClearSelection(); 
                     }
                 }
             }
@@ -2583,11 +3061,14 @@ guid: 18a92d2ceef64941bb83350b1313efa0
 timeCreated: 1769447335
 
 // ===== Infrastructure/Services/Waves/IWaveService.cs =====
-﻿namespace Infrastructure.Services.Waves
+﻿using System;
+
+namespace Infrastructure.Services.Waves
 {
     public interface IWaveService
     {
         void StartLevel();
+        event Action<int> OnWaveStarted;
     }
 }
 
@@ -2826,14 +3307,11 @@ using Zenject;
 
 namespace Physics
 {
-    /// <summary>
-    /// Simulates projectile path using Euler integration and renders it via LineRenderer.
-    /// </summary>
     [RequireComponent(typeof(LineRenderer))]
     public class TrajectoryVisualizer : MonoBehaviour
     {
-        [SerializeField] private int _maxPoints = 50;
-        [SerializeField] private float _timeStep = 0.1f;
+        [SerializeField] private int _maxPoints = 100;
+        [SerializeField] private float _timeStep = 0.02f;
         [SerializeField] private LayerMask _collisionMask;
         
         private LineRenderer _lineRenderer;
@@ -2847,24 +3325,34 @@ namespace Physics
             _lineRenderer.useWorldSpace = true;
         }
 
+        public void SetMaterial(Material mat)
+        {
+            if (mat != null) _lineRenderer.material = mat;
+        }
+
+        public void SetWidth(float width)
+        {
+            _lineRenderer.startWidth = _lineRenderer.endWidth = width;
+        }
+
         public void SimulateTrajectory(Vector3 startPos, Vector3 startVelocity, float mass, float radius, float dragCoeff, float airDensity, Vector3 wind)
         {
             if (_maxPoints < 2) return;
 
             _lineRenderer.positionCount = _maxPoints;
+            _lineRenderer.SetPosition(0, startPos);
+
             Vector3 currentPos = startPos;
             Vector3 currentVel = startVelocity;
             float area = _calculator.CalculateCrossSectionArea(radius);
-
-            _lineRenderer.SetPosition(0, currentPos);
 
             for (int i = 1; i < _maxPoints; i++)
             {
                 Vector3 dragForce = _calculator.CalculateDragForce(currentVel, airDensity, dragCoeff, area, wind);
                 Vector3 acceleration = _calculator.CalculateAcceleration(UnityEngine.Physics.gravity, dragForce, mass);
 
-                Vector3 nextVel = currentVel + acceleration * _timeStep;
-                Vector3 nextPos = currentPos + nextVel * _timeStep;
+                currentVel += acceleration * _timeStep;
+                Vector3 nextPos = currentPos + currentVel * _timeStep;
 
                 if (CheckCollision(currentPos, nextPos, radius, out Vector3 hitPoint))
                 {
@@ -2874,7 +3362,6 @@ namespace Physics
                 }
 
                 currentPos = nextPos;
-                currentVel = nextVel;
                 _lineRenderer.SetPosition(i, currentPos);
             }
         }
@@ -2890,7 +3377,6 @@ namespace Physics
                 hitPoint = hit.point;
                 return true;
             }
-
             return false;
         }
         
@@ -2917,39 +3403,193 @@ guid: d178146f25fb40458c87ecd7c659ab3c
 timeCreated: 1769444820
 
 // ===== UI/HUD/HUDWindow.cs =====
-﻿using Infrastructure.Services.FPS;
+﻿using System.Collections.Generic;
+using Data.Configs;
+using Features.Cannon;
+using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Economy;
+using Infrastructure.Services.FPS;
+using Infrastructure.Services.Planting;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 using Zenject;
 
 namespace UI.HUD
 {
-    /// <summary>
-    /// Controls the Heads-Up Display, updating FPS and other realtime stats.
-    /// </summary>
     public class HudWindow : MonoBehaviour
     {
+        [Header("Stats")]
         [SerializeField] private TextMeshProUGUI _fpsText;
-        [SerializeField] private float _updateInterval = 0.2f;
+        [SerializeField] private TextMeshProUGUI _sunText;
+        
+        [Header("Planting UI")]
+        [SerializeField] private Transform _cardsContainer;
+        [SerializeField] private PlantCard _cardPrefab;
+        [SerializeField] private GameObject _gameplayPanel;
+
+        [Header("Action Mode UI")]
+        [SerializeField] private GameObject _actionPanel;
+        [SerializeField] private Slider _cooldownSlider;
+        [SerializeField] private TextMeshProUGUI _cooldownStatusText;
+        
+        [Header("Text Config")]
+        [SerializeField] private string _textReady = "СНАРЯД ГОТОВ";
+        [SerializeField] private string _textReloading = "ПЕРЕЗАРЯДКА...";
+        [SerializeField] private string _textNotReadyWarning = "Снаряд ещё не готов";
+        [SerializeField] private Color _colorReady = Color.green;
+        [SerializeField] private Color _colorNotReady = Color.red;
 
         private IFPSService _fpsService;
+        private IEconomyService _economyService;
+        private IStaticDataProvider _staticData;
+        private IPlantingService _plantingService;
+
+        private readonly List<PlantCard> _cards = new();
         private float _lastUpdateTimer;
+        
+        private CannonController _activeCannon;
+        private float _warningTimer;
 
         [Inject]
-        public void Construct(IFPSService fpsService)
+        public void Construct(
+            IFPSService fpsService, 
+            IEconomyService economyService,
+            IStaticDataProvider staticData,
+            IPlantingService plantingService)
         {
             _fpsService = fpsService;
+            _economyService = economyService;
+            _staticData = staticData;
+            _plantingService = plantingService;
+        }
+
+        private void Start()
+        {
+            InitializeCards();
+            
+            _economyService.OnSunChanged += UpdateSunDisplay;
+            UpdateSunDisplay(_economyService.CurrentSun);
+            
+            _plantingService.OnPlantSelected += HandlePlantSelected;
+
+            ToggleActionPanel(false);
+        }
+
+        private void OnDestroy()
+        {
+            _economyService.OnSunChanged -= UpdateSunDisplay;
+            _plantingService.OnPlantSelected -= HandlePlantSelected;
+            UnsubscribeActiveCannon();
+        }
+
+        public void SetActiveCannon(CannonController cannon)
+        {
+            UnsubscribeActiveCannon();
+            _activeCannon = cannon;
+
+            if (_activeCannon != null)
+            {
+                ToggleActionPanel(true);
+                _activeCannon.OnFireFailedCooldown += ShowCooldownWarning;
+            }
+            else
+            {
+                ToggleActionPanel(false);
+            }
+        }
+
+        private void UnsubscribeActiveCannon()
+        {
+            if (_activeCannon != null)
+            {
+                _activeCannon.OnFireFailedCooldown -= ShowCooldownWarning;
+                _activeCannon = null;
+            }
+        }
+
+        private void ShowCooldownWarning()
+        {
+            _cooldownStatusText.text = _textNotReadyWarning;
+            _cooldownStatusText.color = _colorNotReady;
+            _warningTimer = 1.0f;
         }
 
         private void Update()
         {
-            _lastUpdateTimer += Time.deltaTime;
+            UpdateFPS();
+            UpdateCardsAvailability();
+            UpdateCannonUI();
+        }
 
-            if (_lastUpdateTimer >= _updateInterval)
+        private void UpdateCannonUI()
+        {
+            if (_activeCannon == null || !_actionPanel.activeSelf) return;
+
+            float progress = _activeCannon.GetReloadProgress();
+            _cooldownSlider.value = progress;
+            bool isReady = progress >= 0.99f;
+            
+            if (isReady)
             {
-                _fpsText.text = $"FPS: {_fpsService.CurrentFps:F0}";
+                _warningTimer = 0f;
+                _cooldownStatusText.text = _textReady;
+                _cooldownStatusText.color = _colorReady;
+            }
+            else if (_warningTimer > 0)
+            {
+                _warningTimer -= Time.deltaTime;
+            }
+            else
+            {
+                _cooldownStatusText.text = _textReloading;
+                _cooldownStatusText.color = Color.white;
+            }
+        }
+
+        private void UpdateFPS()
+        {
+            _lastUpdateTimer += Time.deltaTime;
+            if (_lastUpdateTimer >= 0.5f)
+            {
+                _fpsText.text = $"{_fpsService.CurrentFps:F0}";
                 _lastUpdateTimer = 0f;
             }
+        }
+        
+        private void UpdateCardsAvailability()
+        {
+            int currentSun = _economyService.CurrentSun;
+            var plants = _staticData.GetAllPlants();
+            for (int i = 0; i < _cards.Count && i < plants.Count; i++)
+            {
+                _cards[i].SetAffordable(currentSun >= plants[i].cost);
+            }
+        }
+
+        private void InitializeCards()
+        {
+            foreach (Transform child in _cardsContainer) Destroy(child.gameObject);
+            _cards.Clear();
+
+            var plants = _staticData.GetAllPlants();
+            foreach (var plantData in plants)
+            {
+                var cardInstance = Instantiate(_cardPrefab, _cardsContainer);
+                cardInstance.Initialize(plantData, OnCardClicked);
+                _cards.Add(cardInstance);
+            }
+        }
+
+        private void OnCardClicked(PlantData data) => _plantingService.SelectPlant(data.type);
+        private void HandlePlantSelected(Data.Enums.PlantType type) { /* Visual selection logic */ }
+        private void UpdateSunDisplay(int amount) => _sunText.text = $"{amount}";
+
+        public void SetGameplayVisibility(bool isVisible) => _gameplayPanel.SetActive(isVisible);
+        
+        private void ToggleActionPanel(bool isActive)
+        {
+            if (_actionPanel != null) _actionPanel.SetActive(isActive);
         }
     }
 }
@@ -2958,6 +3598,63 @@ namespace UI.HUD
 ﻿fileFormatVersion: 2
 guid: 6c42822778b543bb9268280ef80e1c4b
 timeCreated: 1769444830
+
+// ===== UI/HUD/PlantCard.cs =====
+﻿using System;
+using Data.Configs;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace UI.HUD
+{
+    public class PlantCard : MonoBehaviour
+    {
+        [SerializeField] private Image _iconImage;
+        [SerializeField] private TextMeshProUGUI _costText;
+        [SerializeField] private Button _button;
+        [SerializeField] private Image _selectionBorder; 
+
+        private PlantData _data;
+        private Action<PlantData> _onClick;
+
+        public void Initialize(PlantData data, Action<PlantData> onClick)
+        {
+            _data = data;
+            _onClick = onClick;
+
+            _iconImage.sprite = data.icon;
+            _costText.text = data.cost.ToString();
+            
+            _button.onClick.AddListener(OnClick);
+            SetSelected(false);
+        }
+
+        private void OnClick() => _onClick?.Invoke(_data);
+
+        public void SetSelected(bool isSelected)
+        {
+            if (_selectionBorder != null)
+                _selectionBorder.enabled = isSelected;
+        }
+
+        public void SetAffordable(bool isAffordable)
+        {
+            _button.interactable = isAffordable;
+            _iconImage.color = isAffordable ? Color.white : Color.gray;
+        }
+
+        private void OnDestroy()
+        {
+            _button.onClick.RemoveListener(OnClick);
+        }
+    }
+}
+
+// ===== UI/HUD/PlantCard.cs.meta =====
+﻿fileFormatVersion: 2
+guid: d0fcfd3c3b084c0e8fc80c872cd45699
+timeCreated: 1769471524
 
 // ===== all_sources.txt.meta =====
 fileFormatVersion: 2

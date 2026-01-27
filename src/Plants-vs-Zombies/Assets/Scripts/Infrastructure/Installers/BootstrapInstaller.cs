@@ -62,6 +62,7 @@ namespace Infrastructure.Installers
             Container.BindInterfacesAndSelfTo<EconomyService>().AsSingle();
             Container.Bind<ICameraService>().To<CameraService>().AsSingle();
             Container.BindInterfacesAndSelfTo<PlantingService>().AsSingle();
+            Container.Bind<IPlantTrackerService>().To<PlantTrackerService>().AsSingle();
         }
 
         private void BindFactories()

@@ -24,7 +24,9 @@ MonoBehaviour:
     m_SubObjectType: 
     m_EditorAssetChanged: 0
   cost: 50
-  health: 100
+  damage: 100
+  sunGenerationAmount: 25
+  sunGenerationInterval: 10
   projectileAsset:
     m_AssetGUID: 3b1e96570729b974db5a90da353cb2dc
     m_SubObjectName: 
@@ -33,6 +35,7 @@ MonoBehaviour:
     m_EditorAssetChanged: 0
   trajectoryMaterial: {fileID: 2100000, guid: 619f291c9ee86234088c9bfef137e09d, type: 2}
   trajectoryWidth: 0.4
+  impactRadius: 1.5
   fireCooldown: 4
   rotationSpeed: 25
   mouseSensitivity: 0.05
@@ -41,7 +44,7 @@ MonoBehaviour:
   maxPitch: 30
   minYaw: -45
   maxYaw: 45
-  projectileMass: 4
+  projectileMass: 3
   projectileRadius: 0.2
   dragCoeff: 0.47
   airDensity: 1.225

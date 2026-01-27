@@ -1,5 +1,4 @@
-﻿using System;
-using Core.Interfaces;
+﻿using Core.Interfaces;
 using Infrastructure.Services.Physics;
 using UnityEngine;
 using Zenject;
@@ -7,7 +6,7 @@ using Zenject;
 namespace Physics
 {
     /// <summary>
-    /// Applies quadratic drag forces to the Rigidbody in FixedUpdate.
+    /// Applies quadratic drag forces and deals damage on impact.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(SphereCollider))]
@@ -22,6 +21,7 @@ namespace Physics
         private float _airDensity;
         private Vector3 _wind;
         private float _area;
+        private float _damage;
         private bool _isLaunched;
 
         [Inject]
@@ -35,13 +35,14 @@ namespace Physics
             _rb = GetComponent<Rigidbody>();
         }
 
-        public void Initialize(float mass, float radius, float dragCoeff, float airDensity, Vector3 wind, Vector3 initialVelocity)
+        public void Initialize(float mass, float radius, float dragCoeff, float airDensity, Vector3 wind, Vector3 initialVelocity, float damage)
         {
             _mass = Mathf.Max(0.001f, mass);
             _radius = Mathf.Max(0.001f, radius);
             _dragCoefficient = Mathf.Max(0f, dragCoeff);
             _airDensity = Mathf.Max(0f, airDensity);
             _wind = wind;
+            _damage = damage;
             
             _area = _calculator.CalculateCrossSectionArea(_radius);
             
@@ -66,9 +67,10 @@ namespace Physics
             var damageable = other.gameObject.GetComponent<IDamageable>();
             if (damageable != null && damageable.IsAlive)
             {
-                float damage = _mass * other.relativeVelocity.magnitude;
-                damageable.TakeDamage(damage);
+                damageable.TakeDamage(_damage);
             }
+
+            else if (other.gameObject.layer != LayerMask.NameToLayer("Ground")) return;
             
             Destroy(gameObject);
         }

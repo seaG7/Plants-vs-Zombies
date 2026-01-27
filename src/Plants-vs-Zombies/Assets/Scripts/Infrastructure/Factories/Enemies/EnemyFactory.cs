@@ -1,4 +1,5 @@
-﻿using Cysharp.Threading.Tasks;
+﻿using System;
+using Cysharp.Threading.Tasks;
 using Features.Enemy;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.Context;
@@ -11,6 +12,8 @@ namespace Infrastructure.Factories.Enemies
     {
         private readonly IGameObjectFactory _gameObjectFactory;
         private readonly ILevelProvider _levelProvider;
+        
+        public event Action<ZombieController> OnZombieCreated;
 
         public EnemyFactory(IGameObjectFactory gameObjectFactory, ILevelProvider levelProvider)
         {
@@ -31,6 +34,8 @@ namespace Infrastructure.Factories.Enemies
             {
                 _levelProvider.CurrentLevel?.UnregisterEnemy(zombie);
             };
+            
+            OnZombieCreated?.Invoke(zombie);
             
             return zombie;
         }

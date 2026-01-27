@@ -6,7 +6,7 @@ namespace Features.Visuals
     public class GridCellHighlighter : MonoBehaviour
     {
         private LineRenderer _lineRenderer;
-        private const float HEIGHT_OFFSET = 0.05f; 
+        private const float HEIGHT_OFFSET = 0f; 
 
         private void Awake()
         {
@@ -28,14 +28,12 @@ namespace Features.Visuals
             _lineRenderer.material = material;
         }
 
-        public void SetStyle(float width, Color color, int sortingOrder = 0)
+        public void SetStyle(float width, int sortingOrder = 0)
         {
             if (_lineRenderer == null) Awake();
             
             _lineRenderer.startWidth = width;
             _lineRenderer.endWidth = width;
-            _lineRenderer.startColor = color;
-            _lineRenderer.endColor = color;
             _lineRenderer.sortingOrder = sortingOrder;
         }
 
@@ -47,7 +45,7 @@ namespace Features.Visuals
 
             float halfWidth = width / 2f;
             float halfLength = length / 2f;
-            float y = centerPos.y + HEIGHT_OFFSET;
+            float y = transform.position.y + HEIGHT_OFFSET;
 
             Vector3[] points = new Vector3[5];
             points[0] = new Vector3(centerPos.x - halfWidth, y, centerPos.z - halfLength);

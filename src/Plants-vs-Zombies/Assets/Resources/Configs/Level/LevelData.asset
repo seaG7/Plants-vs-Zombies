@@ -17,8 +17,8 @@ MonoBehaviour:
     passiveIncomeInterval: 5
     passiveIncomeAmount: 25
   waves:
-  - startDelay: 3
+  - startDelay: 2
     groups:
     - enemyType: 1
       count: 6
-      spawnInterval: 5
+      spawnInterval: 7

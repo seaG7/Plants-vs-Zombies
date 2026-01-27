@@ -78,5 +78,10 @@ namespace Infrastructure.Services.Grid
             if (_occupiedCells.ContainsKey(key))
                 _occupiedCells.Remove(key);
         }
+        
+        public void Reset()
+        {
+            _occupiedCells.Clear();
+        }
     }
 }

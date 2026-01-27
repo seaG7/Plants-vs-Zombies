@@ -10,5 +10,6 @@ namespace Infrastructure.Services.Planting
         void TryPlantAtCursor();
         void ClearSelection();
         void Initialize();
+        void Dispose();
     }
 }

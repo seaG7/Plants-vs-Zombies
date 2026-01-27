@@ -37,5 +37,6 @@ namespace Infrastructure.Factories.Objects
         ) where T : class;
 
         void Destroy(GameObject gameObject);
+        void Cleanup();
     }
 }

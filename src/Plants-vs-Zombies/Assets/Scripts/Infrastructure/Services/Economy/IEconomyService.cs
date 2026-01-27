@@ -11,5 +11,6 @@ namespace Infrastructure.Services.Economy
         bool TrySpendSun(int amount);
         void StartPassiveIncome();
         void StopPassiveIncome();
+        void Reset();
     }
 }

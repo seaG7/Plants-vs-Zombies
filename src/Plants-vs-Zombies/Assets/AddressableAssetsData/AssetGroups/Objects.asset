@@ -15,13 +15,28 @@ MonoBehaviour:
   m_GroupName: Objects
   m_GUID: 28605d48231835b448cd9b766a800741
   m_SerializeEntries:
+  - m_GUID: 2e36e4abd8c20044ea87182f77c3e0e8
+    m_Address: Peashooter
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 3b1e96570729b974db5a90da353cb2dc
-    m_Address: Sphere
+    m_Address: Coconut
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 6672af7002221aa47aab1c453b2b3f0b
+    m_Address: Pea
     m_ReadOnly: 0
     m_SerializedLabels: []
     FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 86b9eab31c3cf98499b1269fa8deee89
     m_Address: CoconutCannon
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 9c915d9f0d71dbb419a3a573c4eaed7a
+    m_Address: Sunflower
     m_ReadOnly: 0
     m_SerializedLabels: []
     FlaggedDuringContentUpdateRestriction: 0

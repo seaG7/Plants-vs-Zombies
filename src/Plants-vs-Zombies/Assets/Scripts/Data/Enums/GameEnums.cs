@@ -5,6 +5,7 @@
         None = 0,
         CoconutCannon = 1,
         Peashooter = 2,
+        Sunflower = 3,
     }
 
     public enum EnemyType

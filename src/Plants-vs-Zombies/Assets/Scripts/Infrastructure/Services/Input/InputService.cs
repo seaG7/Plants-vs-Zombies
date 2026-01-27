@@ -65,8 +65,15 @@ namespace Infrastructure.Services.Input
 
         private void HotbarPerformed(InputAction.CallbackContext ctx)
         {
-            int keyIndex = (int)ctx.ReadValue<float>(); 
-            if (keyIndex > 0) OnHotbarHotkeyPressed?.Invoke(keyIndex);
+            if (int.TryParse(ctx.control.name, out int keyNumber))
+            {
+                OnHotbarHotkeyPressed?.Invoke(keyNumber);
+            }
+            else
+            {
+                int val = (int)ctx.ReadValue<float>(); 
+                if (val > 0) OnHotbarHotkeyPressed?.Invoke(val);
+            }
         }
     }
 }

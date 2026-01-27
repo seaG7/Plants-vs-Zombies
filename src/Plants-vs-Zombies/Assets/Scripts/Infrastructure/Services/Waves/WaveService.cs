@@ -118,5 +118,12 @@ namespace Infrastructure.Services.Waves
             OnWaveStarted?.Invoke(index + 1);
             NextGroup();
         }
+        
+        public void StopLevel()
+        {
+            _isRunning = false;
+            _currentGroupsQueue.Clear();
+            _activeGroup = null;
+        }
     }
 }

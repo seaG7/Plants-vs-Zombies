@@ -29,5 +29,10 @@ namespace Features.Enemy
         {
             _animator.SetTrigger(DieHash);
         }
+        
+        public void Stop()
+        {
+            _animator.speed = 0f;
+        }
     }
 }

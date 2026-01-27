@@ -17,13 +17,18 @@ namespace Data.Configs
         public Sprite icon;
         public AssetReferenceGameObject prefabReference;
 
-        [Header("Economy")]
+        [Header("Economy & Stats")]
         [Min(0)] public int cost;
+        public float damage = 50f;
         
-        [Header("Cannon Physics")]
+        [Header("Sunflower Settings")]
+        public int sunGenerationAmount = 25;
+        public float sunGenerationInterval = 10f;
+
+        [Header("Cannon/Peashooter Physics")]
         public AssetReference projectileAsset;
         public Material trajectoryMaterial;
-        public float trajectoryWidth;
+        public float trajectoryWidth = 0.4f;
         public float impactRadius = 1.5f;
         public float fireCooldown = 4f;
         public float rotationSpeed = 25f;

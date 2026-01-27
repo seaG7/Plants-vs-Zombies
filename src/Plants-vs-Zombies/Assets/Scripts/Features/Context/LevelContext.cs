@@ -7,13 +7,9 @@ using Zenject;
 
 namespace Features.Context
 {
-    /// <summary>
-    /// Holds configuration for the current level's layout, dimensions and grid visualization.
-    /// </summary>
     public class LevelContext : MonoBehaviour
     {
         [Header("Debug")]
-        [Tooltip("Toggle this to force start the waves immediately.")]
         public bool ForceStartWaves;
 
         [Header("Anchors")]
@@ -26,10 +22,11 @@ namespace Features.Context
         [SerializeField] private float _zombieSpawnDistance = 50f;
 
         [Header("Grid Config")]
-        [SerializeField] private int _rowsCount = 1;
+        [SerializeField] private int _rowsCount = 10;
 
         private ILevelProvider _levelProvider;
         private IWaveService _waveService;
+        private FinishLineTrigger _finishTrigger;
         
         private readonly List<IDamageable> _activeEnemies = new();
 
@@ -41,7 +38,9 @@ namespace Features.Context
         public float CellLength => _cellLength;
         public int RowsCount => _rowsCount;
         public float ZombieSpawnDistance => _zombieSpawnDistance;
+        public float FinishZCoordinate => 0f;
 
+        public FinishLineTrigger FinishTrigger => _finishTrigger;
         public IReadOnlyList<IDamageable> ActiveEnemies => _activeEnemies;
         
         [Header("Camera")]
@@ -58,6 +57,23 @@ namespace Features.Context
         private void Awake()
         {
             _levelProvider.SetLevel(this);
+            CreateFinishTrigger();
+        }
+
+        private void CreateFinishTrigger()
+        {
+            var triggerObj = new GameObject("FinishTrigger");
+            triggerObj.transform.SetParent(_originPoint != null ? _originPoint : transform);
+            
+            triggerObj.transform.localPosition = new Vector3(0, 1f, FinishZCoordinate);
+            triggerObj.transform.localRotation = Quaternion.identity;
+
+            float totalWidth = _laneCount * _laneWidth;
+            
+            var col = triggerObj.AddComponent<BoxCollider>();
+            col.size = new Vector3(totalWidth, 5f, 1f); 
+
+            _finishTrigger = triggerObj.AddComponent<FinishLineTrigger>();
         }
 
         private void Update()
@@ -65,7 +81,6 @@ namespace Features.Context
             if (ForceStartWaves)
             {
                 ForceStartWaves = false;
-                Debug.Log("[LevelContext] Force starting waves via Inspector...");
                 _waveService.StartLevel();
             }
         }
@@ -85,48 +100,6 @@ namespace Features.Context
         {
             if (_activeEnemies.Contains(enemy))
                 _activeEnemies.Remove(enemy);
-        }
-
-        private void OnDrawGizmos()
-        {
-            Vector3 center = OriginPosition;
-            Quaternion rot = OriginRotation;
-
-            Gizmos.color = Color.green;
-            Gizmos.DrawWireSphere(center, 0.3f);
-
-            float totalWidth = _laneCount * _laneWidth;
-            float startX = -totalWidth / 2f;
-            
-            Gizmos.color = Color.cyan;
-            for (int i = 0; i <= _laneCount; i++)
-            {
-                float xOffset = startX + (i * _laneWidth);
-
-                Vector3 startPos = center + rot * new Vector3(xOffset, 0, -_rowsCount * _cellLength);
-                Vector3 endPos = center + rot * new Vector3(xOffset, 0, _zombieSpawnDistance);
-                
-                Gizmos.DrawLine(startPos, endPos);
-            }
-
-            Gizmos.color = Color.yellow;
-            for (int r = 0; r <= _rowsCount; r++)
-            {
-                float zOffset = -(r * _cellLength);
-                
-                Vector3 leftSide = center + rot * new Vector3(startX, 0, zOffset);
-                Vector3 rightSide = center + rot * new Vector3(startX + totalWidth, 0, zOffset);
-                
-                Gizmos.DrawLine(leftSide, rightSide);
-            }
-
-            Gizmos.color = Color.red;
-            for (int i = 0; i < _laneCount; i++)
-            {
-                float centerX = startX + (i * _laneWidth) + (_laneWidth / 2f);
-                Vector3 spawnPos = center + rot * new Vector3(centerX, 0, _zombieSpawnDistance);
-                Gizmos.DrawWireSphere(spawnPos, 0.5f);
-            }
         }
     }
 }

@@ -10,5 +10,6 @@ namespace Infrastructure.Services.Grid
         GameObject GetPlantAt(int lane, int row);
         bool TryOccupyCell(int lane, int row, GameObject plant);
         void ReleaseCell(int lane, int row);
+        void Reset();
     }
 }

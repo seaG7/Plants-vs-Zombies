@@ -1,6 +1,7 @@
 ﻿using System;
+using Core.Interfaces;
 using Data.Enums;
-using Features.Cannon;
+using Features.Plants;
 using Features.Visuals;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.Context;
@@ -13,7 +14,7 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
-    public class PlantingService : IPlantingService, IInitializable, IDisposable, ITickable
+    public class PlantingService : IPlantingService, IDisposable, ITickable
     {
         public event Action<PlantType> OnPlantSelected;
 
@@ -23,6 +24,7 @@ namespace Infrastructure.Services.Planting
         private readonly IGameObjectFactory _factory;
         private readonly IStaticDataProvider _staticData;
         private readonly ILevelProvider _levelProvider;
+        private readonly IPlantTrackerService _plantTracker;
 
         private PlantType _selectedPlantType = PlantType.None;
         private GridVisualizer _visualizer;
@@ -33,7 +35,8 @@ namespace Infrastructure.Services.Planting
             IEconomyService economyService,
             IGameObjectFactory factory,
             IStaticDataProvider staticData,
-            ILevelProvider levelProvider)
+            ILevelProvider levelProvider,
+            IPlantTrackerService plantTracker)
         {
             _inputService = inputService;
             _gridService = gridService;
@@ -41,33 +44,43 @@ namespace Infrastructure.Services.Planting
             _factory = factory;
             _staticData = staticData;
             _levelProvider = levelProvider;
+            _plantTracker = plantTracker;
         }
 
         public void Initialize()
         {
+            Dispose();
+
             var go = new GameObject("Planting_GridVisualizer");
             _visualizer = go.AddComponent<GridVisualizer>();
             _visualizer.Initialize();
-            
-            _levelProvider.OnLevelLoaded += () => _visualizer.ShowLaneLines(_levelProvider);
-            if (_levelProvider.CurrentLevel != null) _visualizer.ShowLaneLines(_levelProvider);
 
-            _inputService.OnHotbarHotkeyPressed += OnHotbarPressed;
+            _levelProvider.OnLevelLoaded += OnLevelLoadedHandler;
             _inputService.OnCancelPerformed += ClearSelection;
+
+            if (_levelProvider.CurrentLevel != null) 
+                _visualizer.ShowLaneLines(_levelProvider);
         }
 
         public void Dispose()
         {
-            _levelProvider.OnLevelLoaded -= () => _visualizer.ShowLaneLines(_levelProvider);
-            _inputService.OnHotbarHotkeyPressed -= OnHotbarPressed;
+            _levelProvider.OnLevelLoaded -= OnLevelLoadedHandler;
             _inputService.OnCancelPerformed -= ClearSelection;
-            if (_visualizer != null) UnityEngine.Object.Destroy(_visualizer.gameObject);
-        }
 
-        private void OnHotbarPressed(int slotIndex)
+            if (_visualizer != null)
+            {
+                if (_visualizer.gameObject != null)
+                    UnityEngine.Object.Destroy(_visualizer.gameObject);
+                _visualizer = null;
+            }
+        }
+        
+        private void OnLevelLoadedHandler()
         {
-            if (slotIndex == 1) SelectPlant(PlantType.CoconutCannon);
-            else if (slotIndex == 2) SelectPlant(PlantType.Peashooter);
+            if (_visualizer != null && _levelProvider != null)
+            {
+                _visualizer.ShowLaneLines(_levelProvider);
+            }
         }
 
         public void SelectPlant(PlantType type)
@@ -78,7 +91,7 @@ namespace Infrastructure.Services.Planting
             if (type != PlantType.None)
                 _visualizer.ShowStaticGrid(_levelProvider, _gridService);
             else
-                _visualizer.HideAllInteractive(); // Прячем курсор и ячейки, но НЕ линии лайнов
+                _visualizer.HideAllInteractive(); 
         }
 
         public void ClearSelection()
@@ -135,9 +148,19 @@ namespace Infrastructure.Services.Planting
                         Vector3 buildPos = _gridService.GridToWorld(lane, row);
                         GameObject plantObj = await _factory.InstantiateAsync(plantData.prefabReference, buildPos, Quaternion.identity);
                         
-                        var cannon = plantObj.GetComponent<CannonController>();
-                        if (cannon != null) cannon.Initialize(plantData);
+                        var possessable = plantObj.GetComponent<IPossessablePlant>();
+                        if (possessable != null) 
+                        {
+                            possessable.Initialize(plantData);
+                            _plantTracker.Register(possessable);
+                        }
                         
+                        var sunflower = plantObj.GetComponent<SunflowerController>();
+                        if (sunflower != null)
+                        {
+                            sunflower.Initialize(plantData);
+                        }
+
                         _gridService.TryOccupyCell(lane, row, plantObj);
                         
                         _visualizer.ShowStaticGrid(_levelProvider, _gridService);
