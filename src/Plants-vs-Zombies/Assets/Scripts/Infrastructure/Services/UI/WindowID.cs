@@ -7,5 +7,6 @@
         MainMenu = 2,
         Loading = 3,
         HUD = 4,
+        Settings = 5
     }
 }

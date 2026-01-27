@@ -172,10 +172,9 @@ namespace Core.States
             _stateMachine.ChangeState<GameLoadState>();
         }
 
-        private async void OnMenuClicked()
+        private void OnMenuClicked()
         {
-            _economyService.Reset(); 
-            await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            _stateMachine.ChangeState<MainMenuState>();
         }
 
         private void HandleHotbarInput(int keyIndex)

@@ -6,6 +6,7 @@ using Infrastructure.Factories.UI;
 using Infrastructure.Providers.AssetsAddressables;
 using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Camera;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.FPS;
@@ -63,6 +64,7 @@ namespace Infrastructure.Installers
             Container.Bind<ICameraService>().To<CameraService>().AsSingle();
             Container.BindInterfacesAndSelfTo<PlantingService>().AsSingle();
             Container.Bind<IPlantTrackerService>().To<PlantTrackerService>().AsSingle();
+            Container.Bind<IAudioService>().To<AudioService>().AsSingle();
         }
 
         private void BindFactories()
