@@ -1,10 +1,10 @@
 ﻿using System;
 using Cysharp.Threading.Tasks;
+using Data.Configs;
 using Features.Enemy;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.Context;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 
 namespace Infrastructure.Factories.Enemies
 {
@@ -21,12 +21,12 @@ namespace Infrastructure.Factories.Enemies
             _levelProvider = levelProvider;
         }
 
-        public async UniTask<ZombieController> CreateZombie(AssetReference assetRef, Vector3 position)
+        public async UniTask<ZombieController> CreateZombie(EnemyData data, Vector3 position)
         {
-            GameObject obj = await _gameObjectFactory.InstantiateAsync(assetRef, position, Quaternion.LookRotation(Vector3.back));
+            GameObject obj = await _gameObjectFactory.InstantiateAsync(data.prefabReference, position, Quaternion.LookRotation(Vector3.back));
             
             var zombie = obj.GetComponent<ZombieController>();
-            zombie.Initialize();
+            zombie.Initialize(data);
             
             _levelProvider.CurrentLevel.RegisterEnemy(zombie);
             

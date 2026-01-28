@@ -46,13 +46,16 @@ namespace Data.Configs
         public float airDensity = 1.225f;
         public Vector3 wind = Vector3.zero;
 
-#if UNITY_EDITOR
-        private void Reset() => AssignUniqueId();
+        [Header("Effects & Audio")]
+        public AssetReferenceGameObject impactEffect;
+        public AudioClip fireSound;
+        public AudioClip hitSound;
+        public AudioClip plantSound;
 
-        [ContextMenu("Recalculate ID")]
-        private void AssignUniqueId()
+#if UNITY_EDITOR
+        private void Reset()
         {
-            id = Mathf.Abs(GetInstanceID()); 
+            // Editor logic
         }
 #endif
     }

@@ -13,22 +13,23 @@ namespace Data.Configs
 
         [Header("Waves Settings")]
         public List<WaveInfo> waves;
+        
+        [Header("Audio")]
+        public AudioClip levelMusic;
+        public AudioClip gameOverSound;
     }
 
     [Serializable]
     public class EconomySettings
     {
         public int startingSun = 50;
-        
         public float passiveIncomeInterval = 5.0f;
-
         public int passiveIncomeAmount = 25;
     }
   
     [Serializable]
     public class WaveInfo
     {
-        [Tooltip("Delay before this wave starts")]
         public float startDelay = 5f;
         public List<WaveGroup> groups;
     }

@@ -1,26 +1,40 @@
 ﻿using System;
 using Core.Interfaces;
+using Data.Configs;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Audio;
 using UnityEngine;
+using Zenject;
 
 namespace Features.Enemy
 {
+    /// <summary>
+    /// Controls zombie behavior, movement, health, effects and audio on spawn/death.
+    /// </summary>
     [RequireComponent(typeof(CharacterController))]
     [RequireComponent(typeof(ZombieAnimation))]
     public class ZombieController : MonoBehaviour, IDamageable
     {
-        [SerializeField] private float _maxHealth = 100f;
-        [SerializeField] private float _moveSpeed = 1.5f;
-
-        public event Action OnDeath;
-        public event Action<float> OnHealthChanged;
-
         private ZombieAnimation _animation;
+        private CharacterController _characterController;
+        private IGameObjectFactory _factory;
+        private IAudioService _audioService;
+        private EnemyData _data;
+        
         private float _currentHealth;
         private bool _isAlive;
-        private CharacterController _characterController;
         private Vector3 _moveDirection = Vector3.back; 
 
         public bool IsAlive => _isAlive;
+        public event Action OnDeath;
+        public event Action<float> OnHealthChanged;
+
+        [Inject]
+        public void Construct(IGameObjectFactory factory, IAudioService audioService)
+        {
+            _factory = factory;
+            _audioService = audioService;
+        }
 
         private void Awake()
         {
@@ -28,10 +42,22 @@ namespace Features.Enemy
             _characterController = GetComponent<CharacterController>();
         }
 
-        public void Initialize()
+        public async void Initialize(EnemyData data)
         {
+            _data = data;
+            _currentHealth = _data.maxHealth;
             _isAlive = true;
             _animation.PlayWalk();
+            
+            if (_data.spawnEffect != null && _data.spawnEffect.RuntimeKey != null)
+            {
+                await _factory.InstantiateAsync(_data.spawnEffect, transform.position, Quaternion.identity);
+            }
+
+            if (_data.spawnSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_data.spawnSound, transform.position, _audioService.SfxVolume);
+            }
         }
 
         private void Update()
@@ -62,7 +88,7 @@ namespace Features.Enemy
 
         private void Move()
         {
-            _characterController.Move(_moveDirection * _moveSpeed * Time.deltaTime);
+            _characterController.Move(_moveDirection * _data.moveSpeed * Time.deltaTime);
         }
 
         private void Die()
@@ -70,6 +96,11 @@ namespace Features.Enemy
             _isAlive = false;
             _animation.PlayDeath();
             OnDeath?.Invoke();
+
+            if (_data.deathSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_data.deathSound, transform.position, _audioService.SfxVolume);
+            }
             
             _characterController.enabled = false;
             Destroy(gameObject, 5f); 

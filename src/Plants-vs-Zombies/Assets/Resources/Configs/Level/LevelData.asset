@@ -22,3 +22,26 @@ MonoBehaviour:
     - enemyType: 1
       count: 6
       spawnInterval: 7
+    - enemyType: 1
+      count: 6
+      spawnInterval: 6
+    - enemyType: 1
+      count: 6
+      spawnInterval: 5
+    - enemyType: 1
+      count: 6
+      spawnInterval: 4
+    - enemyType: 1
+      count: 6
+      spawnInterval: 3
+    - enemyType: 1
+      count: 6
+      spawnInterval: 3
+    - enemyType: 1
+      count: 6
+      spawnInterval: 2
+    - enemyType: 1
+      count: 6
+      spawnInterval: 1
+  levelMusic: {fileID: 0}
+  gameOverSound: {fileID: 8300000, guid: 83befd09b16008d4395dbb4b5c9794e9, type: 3}

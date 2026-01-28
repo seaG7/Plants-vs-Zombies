@@ -1,19 +1,26 @@
-﻿using Core.BaseStates; 
+﻿using Cysharp.Threading.Tasks;
+using Core.BaseStates; 
 using Data.Path;
 using Infrastructure.Factories.Objects;
+using Infrastructure.Services;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
+using Infrastructure.Services.Window;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
+    /// <summary>
+    /// Handles the transition from Menu to Game: shows loading, resets data, loads scene.
+    /// </summary>
     public class GameLoadState : IState, IEnterable
     {
         private readonly StateMachine _stateMachine;
         private readonly ISceneLoaderService _sceneLoader;
+        private readonly IWindowService _windowService;
 
         private readonly IEconomyService _economyService;
         private readonly IGridService _gridService;
@@ -24,6 +31,7 @@ namespace Core.States
         public GameLoadState(
             StateMachine stateMachine,
             ISceneLoaderService sceneLoader,
+            IWindowService windowService,
             IEconomyService economyService,
             IGridService gridService,
             IPlantTrackerService plantTracker,
@@ -32,6 +40,7 @@ namespace Core.States
         {
             _stateMachine = stateMachine;
             _sceneLoader = sceneLoader;
+            _windowService = windowService;
             _economyService = economyService;
             _gridService = gridService;
             _plantTracker = plantTracker;
@@ -41,6 +50,10 @@ namespace Core.States
 
         public async void Enter()
         {
+            await _windowService.Open(WindowID.Loading);
+
+            await UniTask.Yield(PlayerLoopTiming.Update);
+
             _economyService.Reset();
             _gridService.Reset();
             _plantTracker.Clear();

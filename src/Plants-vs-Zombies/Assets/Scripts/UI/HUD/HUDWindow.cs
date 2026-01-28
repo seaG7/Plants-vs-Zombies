@@ -2,10 +2,13 @@
 using System.Collections.Generic;
 using Core.Interfaces;
 using Data.Configs;
+using Data.Enums;
+using DG.Tweening;
 using Features.Plants;
 using Infrastructure.Providers.StaticData;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.FPS;
+using Infrastructure.Services.Input;
 using Infrastructure.Services.Planting;
 using TMPro;
 using UnityEngine;
@@ -20,10 +23,24 @@ namespace UI.HUD
         [SerializeField] private TextMeshProUGUI _fpsText;
         [SerializeField] private TextMeshProUGUI _sunText;
         
+        [Header("Controls")]
+        [SerializeField] private Button _settingsButton;
+        [SerializeField] private Button _exitToMenuButton;
+        
         [Header("Planting UI")]
         [SerializeField] private Transform _cardsContainer;
         [SerializeField] private PlantCard _cardPrefab;
         [SerializeField] private GameObject _gameplayPanel;
+        [SerializeField] private Image _plantingGhostImage; 
+
+        [Header("Tutorial UI")]
+        [SerializeField] private GameObject _dimmedPanel; 
+        [SerializeField] private RectTransform _tutorialArrow;
+        [SerializeField] private RectTransform _tutorialOrigin1;
+        [SerializeField] private RectTransform _tutorialOrigin2;
+        
+        [SerializeField] private float _arrowAnimDuration = 0.6f;
+        [SerializeField] private float _arrowWorldYOffset = 50f;
 
         [Header("Action Mode UI")]
         [SerializeField] private GameObject _actionPanel;
@@ -36,16 +53,15 @@ namespace UI.HUD
         
         [Header("Game Over UI")]
         [SerializeField] private GameObject _gameOverPanel;
+        [SerializeField] private TextMeshProUGUI _gameOverTitle; 
         [SerializeField] private Button _restartButton;
         [SerializeField] private Button _menuButton;
         
         [Header("Battle Controls")]
         [SerializeField] private Button _startBattleButton;
 
-
         [Header("Text Config")]
         [SerializeField] private string _textReady = "СНАРЯД ГОТОВ";
-
         [SerializeField] private string _textReloading = "ПЕРЕЗАРЯДКА...";
         [SerializeField] private string _textNotReadyWarning = "Снаряд ещё не готов";
         [SerializeField] private Color _colorReady = Color.green;
@@ -56,12 +72,17 @@ namespace UI.HUD
         private IStaticDataProvider _staticData;
         private IPlantingService _plantingService;
         private IPlantTrackerService _plantTracker;
+        private IInputService _inputService;
         private DiContainer _container;
 
         private readonly List<PlantCard> _cards = new();
         private float _lastUpdateTimer;
         private IPossessablePlant _activePlant;
         private float _warningTimer;
+
+        private bool _isArrowTrackingWorld;
+        private Transform _worldTrackingTarget;
+        private Tween _arrowTween;
 
         [Inject]
         public void Construct(
@@ -70,6 +91,7 @@ namespace UI.HUD
             IStaticDataProvider staticData,
             IPlantingService plantingService,
             IPlantTrackerService plantTracker,
+            IInputService inputService,
             DiContainer container)
         {
             _fpsService = fpsService;
@@ -77,6 +99,7 @@ namespace UI.HUD
             _staticData = staticData;
             _plantingService = plantingService;
             _plantTracker = plantTracker;
+            _inputService = inputService;
             _container = container;
         }
 
@@ -100,19 +123,146 @@ namespace UI.HUD
             _economyService.OnSunChanged -= UpdateSunDisplay;
             _plantingService.OnPlantSelected -= HandlePlantSelected;
             if (_plantTracker != null) _plantTracker.OnListChanged -= RebuildActivePlantsList;
+            
+            _arrowTween?.Kill();
             UnsubscribeActivePlant();
         }
+
+        public void SetDimmed(bool isActive)
+        {
+            if (_dimmedPanel != null)
+                _dimmedPanel.SetActive(isActive);
+        }
+
+        public void ShowTutorialStep1_Selection()
+        {
+            if (_tutorialOrigin1 == null) return;
+            
+            SetupArrow();
+            _isArrowTrackingWorld = false;
+
+            _tutorialArrow.position = _tutorialOrigin1.position;
+            _tutorialArrow.rotation = Quaternion.Euler(0, 0, 0);
+
+            float startX = _tutorialArrow.position.x;
+            _arrowTween = _tutorialArrow.DOMoveX(startX + 20f, _arrowAnimDuration)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetEase(Ease.InOutSine);
+        }
+
+        public void ShowTutorialStep2_Placement()
+        {
+            if (_tutorialOrigin2 == null) return;
+
+            SetupArrow();
+            _isArrowTrackingWorld = false;
+
+            _tutorialArrow.position = _tutorialOrigin2.position;
+            _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
+
+            float startY = _tutorialArrow.position.y;
+            _arrowTween = _tutorialArrow.DOMoveY(startY - 20f, _arrowAnimDuration)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetEase(Ease.InOutSine);
+        }
+
+        public void ShowTutorialStep3_Possession(Transform target)
+        {
+            SetupArrow();
+            _isArrowTrackingWorld = true;
+            _worldTrackingTarget = target;
+            
+            _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
+
+            // Анимация пульсации
+            _arrowTween = _tutorialArrow.DOScale(1.2f, _arrowAnimDuration)
+                .SetLoops(-1, LoopType.Yoyo);
+        }
+
+        public void HideTutorialArrow()
+        {
+            if (_tutorialArrow != null)
+            {
+                _arrowTween?.Kill();
+                _tutorialArrow.gameObject.SetActive(false);
+            }
+            _isArrowTrackingWorld = false;
+            _worldTrackingTarget = null;
+        }
+
+        public void SetGhost(Sprite sprite)
+        {
+            if (_plantingGhostImage == null) return;
+
+            if (sprite != null)
+            {
+                _plantingGhostImage.sprite = sprite;
+                _plantingGhostImage.gameObject.SetActive(true);
+            }
+            else
+            {
+                _plantingGhostImage.gameObject.SetActive(false);
+            }
+        }
+
+        private void SetupArrow()
+        {
+            if (_tutorialArrow == null) return;
+            _tutorialArrow.gameObject.SetActive(true);
+            _arrowTween?.Kill();
+            _tutorialArrow.localScale = Vector3.one;
+        }
+
+        private void Update()
+        {
+            UpdateFPS();
+            UpdateCardsAvailability();
+            UpdatePlantUI();
+            
+            if (_plantingGhostImage.gameObject.activeSelf)
+            {
+                _plantingGhostImage.transform.position = _inputService.GetPointerPosition();
+            }
+
+            if (_isArrowTrackingWorld && _tutorialArrow.gameObject.activeSelf && _worldTrackingTarget != null)
+            {
+                Vector3 screenPos = Camera.main.WorldToScreenPoint(_worldTrackingTarget.position);
+                
+                // Если Z < 0, объект сзади камеры
+                if (screenPos.z < 0) 
+                {
+                    _tutorialArrow.gameObject.SetActive(false);
+                }
+                else
+                {
+                    if (!_tutorialArrow.gameObject.activeSelf) 
+                        _tutorialArrow.gameObject.SetActive(true);
+
+                    screenPos.z = 0;
+
+                    _tutorialArrow.GetComponentInChildren<RectTransform>().position = new Vector3(0, _arrowWorldYOffset, 0);
+                }
+            }
+        }
         
-        public void BindButtons(Action onRestart, Action onMenu, Action onStartBattle) // Updated signature
+        public void BindButtons(Action onRestart, Action onMenu, Action onStartBattle, Action onSettings)
         {
             _restartButton.onClick.AddListener(() => onRestart?.Invoke());
             _menuButton.onClick.AddListener(() => onMenu?.Invoke());
+            _exitToMenuButton.onClick.AddListener(() => onMenu?.Invoke());
+            _settingsButton.onClick.AddListener(() => onSettings?.Invoke());
             _startBattleButton.onClick.AddListener(() => onStartBattle?.Invoke());
         }
 
-        public void ShowGameOverPanel()
+        public void ShowGameOverPanel(bool isVictory)
         {
             _gameOverPanel.SetActive(true);
+            _gameOverTitle.text = isVictory ? "VICTORY!" : "GAME OVER";
+            _settingsButton.gameObject.SetActive(false);
+            _exitToMenuButton.gameObject.SetActive(false);
+            HideTutorialArrow();
+            SetGhost(null);
+            SetDimmed(false);
         }
 
         public void SetActivePlant(IPossessablePlant plant)
@@ -146,13 +296,6 @@ namespace UI.HUD
             _cooldownStatusText.text = _textNotReadyWarning;
             _cooldownStatusText.color = _colorNotReady;
             _warningTimer = 1.0f;
-        }
-
-        private void Update()
-        {
-            UpdateFPS();
-            UpdateCardsAvailability();
-            UpdatePlantUI();
         }
 
         private void UpdatePlantUI()
@@ -220,16 +363,16 @@ namespace UI.HUD
                 var plant = plants[i];
                 var view = _container.
                     InstantiatePrefabForComponent<ActivePlantView>(_activePlantPrefab, _activePlantsContainer);
-                Data.Enums.PlantType type = Data.Enums.PlantType.None;
-                if (plant is CannonController) type = Data.Enums.PlantType.CoconutCannon;
-                else if (plant is PeashooterController) type = Data.Enums.PlantType.Peashooter;
+                PlantType type = PlantType.None;
+                if (plant is CannonController) type = PlantType.CoconutCannon;
+                else if (plant is PeashooterController) type = PlantType.Peashooter;
                 view.Initialize(plant, i, type);
                 view.SetSelected(_activePlant == plant);
             }
         }
 
         private void OnCardClicked(PlantData data) => _plantingService.SelectPlant(data.type);
-        private void HandlePlantSelected(Data.Enums.PlantType type) { }
+        private void HandlePlantSelected(PlantType type) { }
         private void UpdateSunDisplay(int amount) => _sunText.text = $"{amount}";
 
         public void SetGameplayVisibility(bool isVisible) => _gameplayPanel.SetActive(isVisible);

@@ -6,6 +6,7 @@ namespace Infrastructure.Services.Waves
     {
         void StartLevel();
         event Action<int> OnWaveStarted;
+        event Action OnLevelCompleted;
         void StopLevel();
     }
 }

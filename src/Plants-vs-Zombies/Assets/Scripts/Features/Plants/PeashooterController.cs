@@ -2,6 +2,7 @@
 using Core.Interfaces;
 using Data.Configs;
 using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
@@ -10,6 +11,9 @@ using Random = UnityEngine.Random;
 
 namespace Features.Plants
 {
+    /// <summary>
+    /// Controls the Peashooter plant, including aiming, firing, and playing fire sounds.
+    /// </summary>
     public class PeashooterController : MonoBehaviour, IPossessablePlant
     {
         [Header("References")]
@@ -25,6 +29,7 @@ namespace Features.Plants
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
+        private IAudioService _audioService;
         private PlantData _config;
 
         private bool _isPossessed;
@@ -33,10 +38,11 @@ namespace Features.Plants
         private float _lastFireTime = -999f;
 
         [Inject]
-        public void Construct(IInputService inputService, IGameObjectFactory factory)
+        public void Construct(IInputService inputService, IGameObjectFactory factory, IAudioService audioService)
         {
             _inputService = inputService;
             _factory = factory;
+            _audioService = audioService;
         }
 
         public void Initialize(PlantData config)
@@ -132,6 +138,11 @@ namespace Features.Plants
             _lastFireTime = Time.time;
             OnFireSuccess?.Invoke();
 
+            if (_config.fireSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_config.fireSound, _muzzle.position, _audioService.SfxVolume);
+            }
+
             float currentMass = Random.Range(_config.projectileMass * 0.98f, _config.projectileMass * 1.02f);
 
             var projectileObj = await _factory.InstantiateAsync(_config.projectileAsset, _visualizer.transform.position, Quaternion.identity);
@@ -141,7 +152,7 @@ namespace Features.Plants
             {
                 Vector3 startVel = _muzzle.forward * _config.initialSpeed;
                 physicsComp.Initialize(currentMass, _config.projectileRadius, _config.dragCoeff,
-                    _config.airDensity, _config.wind, startVel, _config.damage);
+                    _config.airDensity, _config.wind, startVel, _config.damage, _config);
             }
         }
     }

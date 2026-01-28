@@ -49,3 +49,12 @@ MonoBehaviour:
   dragCoeff: 0.47
   airDensity: 1.225
   wind: {x: 0, y: 0, z: 0}
+  impactEffect:
+    m_AssetGUID: 
+    m_SubObjectName: 
+    m_SubObjectGUID: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  fireSound: {fileID: 0}
+  hitSound: {fileID: 0}
+  plantSound: {fileID: 8300000, guid: 2dab1aa8d8bc12d4aa17ae34ba55e6d1, type: 3}

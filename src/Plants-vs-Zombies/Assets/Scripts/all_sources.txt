@@ -448,10 +448,9 @@ namespace Core.States
             _stateMachine.ChangeState<GameLoadState>();
         }
 
-        private async void OnMenuClicked()
+        private void OnMenuClicked()
         {
-            _economyService.Reset(); 
-            await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            _stateMachine.ChangeState<MainMenuState>();
         }
 
         private void HandleHotbarInput(int keyIndex)
@@ -555,33 +554,41 @@ timeCreated: 1769444865
 
 // ===== Core/States/MainMenuState.cs =====
 ﻿using Core.BaseStates;
-using Cysharp.Threading.Tasks;
 using Data.Path;
+using Infrastructure.Services;
 using Infrastructure.Services.Scene;
+using Infrastructure.Services.Window;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
+    /// <summary>
+    /// Handles the main menu scene logic and UI initialization.
+    /// </summary>
     public class MainMenuState : IState, IEnterable, IExitable
     {
         private readonly ISceneLoaderService _sceneLoader;
-        private object _sceneInstance;
-        private readonly StateMachine _stateMachine;
+        private readonly IWindowService _windowService;
 
-        public MainMenuState(ISceneLoaderService sceneLoader, StateMachine stateMachine)
+        public MainMenuState(ISceneLoaderService sceneLoader, IWindowService windowService)
         {
             _sceneLoader = sceneLoader;
-            _stateMachine = stateMachine;
+            _windowService = windowService;
         }
 
         public async void Enter()
         {
-            _stateMachine.ChangeState<GameLoadState>();
+            await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            await _windowService.Open(WindowID.MainMenu);
         }
 
         public void Exit()
         {
-            
+            _windowService.Close(WindowID.MainMenu);
+            if (_windowService.IsWindowOpened(WindowID.Settings))
+            {
+                _windowService.Close(WindowID.Settings);
+            }
         }
     }
 }
@@ -2212,6 +2219,7 @@ using Infrastructure.Factories.UI;
 using Infrastructure.Providers.AssetsAddressables;
 using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Camera;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.FPS;
@@ -2269,6 +2277,7 @@ namespace Infrastructure.Installers
             Container.Bind<ICameraService>().To<CameraService>().AsSingle();
             Container.BindInterfacesAndSelfTo<PlantingService>().AsSingle();
             Container.Bind<IPlantTrackerService>().To<PlantTrackerService>().AsSingle();
+            Container.Bind<IAudioService>().To<AudioService>().AsSingle();
         }
 
         private void BindFactories()
@@ -2582,6 +2591,82 @@ DefaultImporter:
   assetBundleName: 
   assetBundleVariant: 
 
+
+// ===== Infrastructure/Services/Audio.meta =====
+﻿fileFormatVersion: 2
+guid: 4226c4c019ca4894837ac31b152fa1c5
+timeCreated: 1769539188
+
+// ===== Infrastructure/Services/Audio/AudioService.cs =====
+﻿using UnityEngine;
+
+namespace Infrastructure.Services.Audio
+{
+    /// <summary>
+    /// Manages global audio settings and volume control.
+    /// </summary>
+    public class AudioService : IAudioService
+    {
+        private const string MUSIC_KEY = "MusicVolume";
+        private const string SFX_KEY = "SfxVolume";
+
+        public float MasterVolume => AudioListener.volume;
+        public float MusicVolume { get; private set; }
+        public float SfxVolume { get; private set; }
+
+        public AudioService()
+        {
+            MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 1f);
+            SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 1f);
+        }
+
+        public void SetMasterVolume(float value)
+        {
+            AudioListener.volume = Mathf.Clamp01(value);
+        }
+
+        public void SetMusicVolume(float value)
+        {
+            MusicVolume = Mathf.Clamp01(value);
+            PlayerPrefs.SetFloat(MUSIC_KEY, MusicVolume);
+            PlayerPrefs.Save();
+        }
+
+        public void SetSfxVolume(float value)
+        {
+            SfxVolume = Mathf.Clamp01(value);
+            PlayerPrefs.SetFloat(SFX_KEY, SfxVolume);
+            PlayerPrefs.Save();
+        }
+    }
+}
+
+// ===== Infrastructure/Services/Audio/AudioService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 1baf1043086b4fc18f4b28959902291c
+timeCreated: 1769539213
+
+// ===== Infrastructure/Services/Audio/IAudioService.cs =====
+﻿using System;
+
+namespace Infrastructure.Services.Audio
+{
+    public interface IAudioService
+    {
+        float MasterVolume { get; }
+        float MusicVolume { get; }
+        float SfxVolume { get; }
+
+        void SetMasterVolume(float value);
+        void SetMusicVolume(float value);
+        void SetSfxVolume(float value);
+    }
+}
+
+// ===== Infrastructure/Services/Audio/IAudioService.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 614255d7591e4872ae9274e2c3f7bd4f
+timeCreated: 1769539197
 
 // ===== Infrastructure/Services/Camera.meta =====
 ﻿fileFormatVersion: 2
@@ -3163,12 +3248,12 @@ namespace Infrastructure.Services.Lanes
 guid: 24405fafcfdc48fcaeea54469fc945c6
 timeCreated: 1769447080
 
-// ===== Infrastructure/Services/Physics.meta =====
+// ===== Infrastructure/Services/PhysicsCalculation.meta =====
 ﻿fileFormatVersion: 2
 guid: 7ceac72dda5341819d28f851802e6d1d
 timeCreated: 1769440277
 
-// ===== Infrastructure/Services/Physics/AerodynamicsCalculationService.cs =====
+// ===== Infrastructure/Services/PhysicsCalculation/AerodynamicsCalculationService.cs =====
 ﻿using UnityEngine;
 
 namespace Infrastructure.Services.Physics
@@ -3206,12 +3291,12 @@ namespace Infrastructure.Services.Physics
     }
 }
 
-// ===== Infrastructure/Services/Physics/AerodynamicsCalculationService.cs.meta =====
+// ===== Infrastructure/Services/PhysicsCalculation/AerodynamicsCalculationService.cs.meta =====
 ﻿fileFormatVersion: 2
 guid: dc9e46de46b0471590ecff97bc7c3562
 timeCreated: 1769440290
 
-// ===== Infrastructure/Services/Physics/IAerodynamicsCalculationService.cs =====
+// ===== Infrastructure/Services/PhysicsCalculation/IAerodynamicsCalculationService.cs =====
 ﻿using UnityEngine;
 
 namespace Infrastructure.Services.Physics
@@ -3224,7 +3309,7 @@ namespace Infrastructure.Services.Physics
     }
 }
 
-// ===== Infrastructure/Services/Physics/IAerodynamicsCalculationService.cs.meta =====
+// ===== Infrastructure/Services/PhysicsCalculation/IAerodynamicsCalculationService.cs.meta =====
 ﻿fileFormatVersion: 2
 guid: 65bc1c9655274f56aed79bcf4f2e1dba
 timeCreated: 1769440390
@@ -3612,6 +3697,7 @@ timeCreated: 1769390422
         MainMenu = 2,
         Loading = 3,
         HUD = 4,
+        Settings = 5
     }
 }
 
@@ -4408,6 +4494,137 @@ timeCreated: 1769471524
 ﻿fileFormatVersion: 2
 guid: 427f80d72eef44978b1f564d6ee023a0
 timeCreated: 1769538945
+
+// ===== UI/MainMenu/MainMenuWindow.cs =====
+﻿using Core.BaseStates;
+using Core.States;
+using Infrastructure.Services;
+using Infrastructure.Services.Window;
+using UnityEngine;
+using UnityEngine.UI;
+using Zenject;
+
+namespace UI.MainMenu
+{
+    /// <summary>
+    /// Controls the main menu interaction logic.
+    /// </summary>
+    public class MainMenuWindow : MonoBehaviour
+    {
+        [SerializeField] private Button _startButton;
+        [SerializeField] private Button _settingsButton;
+
+        private StateMachine _stateMachine;
+        private IWindowService _windowService;
+
+        [Inject]
+        public void Construct(StateMachine stateMachine, IWindowService windowService)
+        {
+            _stateMachine = stateMachine;
+            _windowService = windowService;
+        }
+
+        private void Start()
+        {
+            _startButton.onClick.AddListener(OnStartClicked);
+            _settingsButton.onClick.AddListener(OnSettingsClicked);
+        }
+
+        private void OnDestroy()
+        {
+            _startButton.onClick.RemoveListener(OnStartClicked);
+            _settingsButton.onClick.RemoveListener(OnSettingsClicked);
+        }
+
+        private void OnStartClicked()
+        {
+            _stateMachine.ChangeState<GameLoadState>();
+        }
+
+        private void OnSettingsClicked()
+        {
+            _windowService.Open(WindowID.Settings);
+        }
+    }
+}
+
+// ===== UI/MainMenu/MainMenuWindow.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 4bbe7b12d5264c968d856e06a6e87970
+timeCreated: 1769539248
+
+// ===== UI/MainMenu/SettingsWindow.cs =====
+﻿using Infrastructure.Services;
+using Infrastructure.Services.Audio;
+using Infrastructure.Services.Window;
+using UnityEngine;
+using UnityEngine.UI;
+using Zenject;
+
+namespace UI.MainMenu
+{
+    /// <summary>
+    /// Controls settings panel, audio sliders and closing logic.
+    /// </summary>
+    public class SettingsWindow : MonoBehaviour
+    {
+        [SerializeField] private Button _closeButton;
+        [SerializeField] private Slider _sfxSlider;
+        [SerializeField] private Slider _musicSlider;
+
+        private IWindowService _windowService;
+        private IAudioService _audioService;
+
+        [Inject]
+        public void Construct(IWindowService windowService, IAudioService audioService)
+        {
+            _windowService = windowService;
+            _audioService = audioService;
+        }
+
+        private void Start()
+        {
+            InitializeState();
+            
+            _closeButton.onClick.AddListener(OnCloseClicked);
+            _sfxSlider.onValueChanged.AddListener(OnSfxChanged);
+            _musicSlider.onValueChanged.AddListener(OnMusicChanged);
+        }
+
+        private void OnDestroy()
+        {
+            _closeButton.onClick.RemoveListener(OnCloseClicked);
+            _sfxSlider.onValueChanged.RemoveListener(OnSfxChanged);
+            _musicSlider.onValueChanged.RemoveListener(OnMusicChanged);
+        }
+
+        private void InitializeState()
+        {
+            _sfxSlider.value = _audioService.SfxVolume;
+            _musicSlider.value = _audioService.MusicVolume;
+        }
+
+        private void OnSfxChanged(float value)
+        {
+            _audioService.SetSfxVolume(value);
+        }
+
+        private void OnMusicChanged(float value)
+        {
+            _audioService.SetMusicVolume(value);
+        }
+
+        private void OnCloseClicked()
+        {
+            _windowService.Close(WindowID.Settings);
+        }
+    }
+}
+
+// ===== UI/MainMenu/SettingsWindow.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 61bebc6a4a8543cbb9b6ac96b57d3f7f
+timeCreated: 1769539269
 
 // ===== all_sources.txt.meta =====
 fileFormatVersion: 2

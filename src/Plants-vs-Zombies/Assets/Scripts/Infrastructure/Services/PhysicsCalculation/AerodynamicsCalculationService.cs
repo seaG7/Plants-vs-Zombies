@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace Infrastructure.Services.Physics
+namespace Infrastructure.Services.PhysicsCalculation
 {
     /// <summary>
     /// Provides physics calculations for quadratic drag and aerodynamics.

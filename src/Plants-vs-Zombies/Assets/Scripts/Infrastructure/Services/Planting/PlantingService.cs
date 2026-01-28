@@ -6,6 +6,7 @@ using Features.Visuals;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
@@ -14,9 +15,13 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
+    /// <summary>
+    /// Manages the planting logic, including checking costs, grid occupation, and playing planting sounds.
+    /// </summary>
     public class PlantingService : IPlantingService, IDisposable, ITickable
     {
         public event Action<PlantType> OnPlantSelected;
+        public event Action<Vector3> OnPlantingSuccess;
 
         private readonly IInputService _inputService;
         private readonly IGridService _gridService;
@@ -25,6 +30,7 @@ namespace Infrastructure.Services.Planting
         private readonly IStaticDataProvider _staticData;
         private readonly ILevelProvider _levelProvider;
         private readonly IPlantTrackerService _plantTracker;
+        private readonly IAudioService _audioService;
 
         private PlantType _selectedPlantType = PlantType.None;
         private GridVisualizer _visualizer;
@@ -36,7 +42,8 @@ namespace Infrastructure.Services.Planting
             IGameObjectFactory factory,
             IStaticDataProvider staticData,
             ILevelProvider levelProvider,
-            IPlantTrackerService plantTracker)
+            IPlantTrackerService plantTracker,
+            IAudioService audioService)
         {
             _inputService = inputService;
             _gridService = gridService;
@@ -45,6 +52,7 @@ namespace Infrastructure.Services.Planting
             _staticData = staticData;
             _levelProvider = levelProvider;
             _plantTracker = plantTracker;
+            _audioService = audioService;
         }
 
         public void Initialize()
@@ -160,8 +168,15 @@ namespace Infrastructure.Services.Planting
                         {
                             sunflower.Initialize(plantData);
                         }
+                        
+                        if (plantData.plantSound != null)
+                        {
+                            AudioSource.PlayClipAtPoint(plantData.plantSound, buildPos, _audioService.SfxVolume);
+                        }
 
                         _gridService.TryOccupyCell(lane, row, plantObj);
+                        
+                        OnPlantingSuccess?.Invoke(buildPos);
                         
                         _visualizer.ShowStaticGrid(_levelProvider, _gridService);
                         ClearSelection(); 

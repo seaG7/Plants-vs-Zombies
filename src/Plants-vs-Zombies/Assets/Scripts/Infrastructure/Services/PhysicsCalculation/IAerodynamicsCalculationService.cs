@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-namespace Infrastructure.Services.Physics
+namespace Infrastructure.Services.PhysicsCalculation
 {
     public interface IAerodynamicsCalculationService
     {

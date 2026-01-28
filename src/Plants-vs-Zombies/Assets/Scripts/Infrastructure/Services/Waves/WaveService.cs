@@ -26,6 +26,7 @@ namespace Infrastructure.Services.Waves
         private int _spawnedInGroupCount;
 
         public event System.Action<int> OnWaveStarted;
+        public event System.Action OnLevelCompleted;
 
         public WaveService(
             IEnemyFactory enemyFactory, 
@@ -44,7 +45,7 @@ namespace Infrastructure.Services.Waves
             _levelConfig = _staticData.GetLevelData();
             if (_levelConfig == null || _levelConfig.waves.Count == 0)
             {
-                Debug.LogError("[WaveService] No Level Config found!");
+                OnLevelCompleted?.Invoke();
                 return;
             }
 
@@ -85,7 +86,7 @@ namespace Infrastructure.Services.Waves
             int randomLane = UnityEngine.Random.Range(0, _laneService.LaneCount);
             Vector3 spawnPos = _laneService.GetSpawnPosition(randomLane);
 
-            var zombie = await _enemyFactory.CreateZombie(enemyData.prefabReference, spawnPos);
+            var zombie = await _enemyFactory.CreateZombie(enemyData, spawnPos);
             
             zombie.OnDeath += () => _economyService.AddSun(enemyData.killReward);
         }
@@ -98,7 +99,10 @@ namespace Infrastructure.Services.Waves
                 if (_currentWaveIndex < _levelConfig.waves.Count)
                     _stateTimer = _levelConfig.waves[_currentWaveIndex].startDelay;
                 else
+                {
                     _isRunning = false;
+                    OnLevelCompleted?.Invoke(); // Уровень пройден (волны кончились)
+                }
                 return;
             }
             _activeGroup = _currentGroupsQueue.Dequeue();
@@ -111,6 +115,7 @@ namespace Infrastructure.Services.Waves
             if (index >= _levelConfig.waves.Count)
             {
                 _isRunning = false;
+                OnLevelCompleted?.Invoke();
                 return;
             }
             var waveInfo = _levelConfig.waves[index];

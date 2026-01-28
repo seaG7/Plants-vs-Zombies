@@ -13,5 +13,6 @@ namespace Infrastructure.Providers.StaticData
         LevelData GetLevelData(); 
         List<PlantData> GetAllPlants();
         List<EnemyData> GetAllEnemies();
+        GameConfig GetGameConfig();
     }
 }

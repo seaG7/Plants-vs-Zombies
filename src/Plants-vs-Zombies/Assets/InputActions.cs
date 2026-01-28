@@ -1218,6 +1218,17 @@ public partial class @InputActions: IInputActionCollection2, IDisposable
                 },
                 {
                     ""name"": """",
+                    ""id"": ""0e68a044-e6a0-4487-8c21-640917a8b6ac"",
+                    ""path"": ""<Keyboard>/escape"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Cancel"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
                     ""id"": ""6877f332-a47d-4324-8c41-fd1f2a05a18e"",
                     ""path"": ""<Keyboard>/1"",
                     ""interactions"": """",

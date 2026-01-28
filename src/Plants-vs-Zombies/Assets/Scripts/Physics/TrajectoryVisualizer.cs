@@ -1,4 +1,4 @@
-﻿using Infrastructure.Services.Physics;
+﻿using Infrastructure.Services.PhysicsCalculation;
 using UnityEngine;
 using Zenject;
 

@@ -1,10 +1,15 @@
-﻿using System.Linq;
+﻿// ... imports ...
+using UI.HUD;
+using UnityEngine;
 using Core.BaseStates;
 using Core.Interfaces;
-using Data.Path;
+using Data.Enums;
 using Features.Enemy;
+using Features.Plants;
 using Infrastructure.Providers.Context;
+using Infrastructure.Providers.StaticData;
 using Infrastructure.Services;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Camera;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
@@ -13,14 +18,12 @@ using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
-using UI.HUD;
-using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
     public class GameplayState : IState, IEnterable, IExitable
     {
+        // ... (dependencies) ...
         private readonly StateMachine _stateMachine;
         private readonly IWindowService _windowService;
         private readonly IInputService _inputService;
@@ -32,6 +35,8 @@ namespace Core.States
         private readonly IPlantTrackerService _plantTracker;
         private readonly ISceneLoaderService _sceneLoader;
         private readonly IEconomyService _economyService;
+        private readonly IStaticDataProvider _staticData;
+        private readonly IAudioService _audioService;
 
         private HudWindow _hudWindow;
         private IPossessablePlant _currentPossessedPlant;
@@ -41,6 +46,10 @@ namespace Core.States
 
         private float _nextModeSwitchTime;
         private const float SWITCH_COOLDOWN = 0.7f;
+        
+        // --- Tutorial State ---
+        private bool _isTutorialComplete = false;
+        private int _tutorialStep = 0; 
 
         public GameplayState(
             StateMachine stateMachine,
@@ -53,7 +62,9 @@ namespace Core.States
             IWaveService waveService,
             IPlantTrackerService plantTracker,
             ISceneLoaderService sceneLoader,
-            IEconomyService economyService)
+            IEconomyService economyService,
+            IStaticDataProvider staticData,
+            IAudioService audioService)
         {
             _stateMachine = stateMachine;
             _windowService = windowService;
@@ -66,6 +77,8 @@ namespace Core.States
             _plantTracker = plantTracker;
             _sceneLoader = sceneLoader;
             _economyService = economyService;
+            _staticData = staticData;
+            _audioService = audioService;
         }
 
         public async void Enter()
@@ -73,9 +86,14 @@ namespace Core.States
             _isGameOver = false;
             _isBattleStarted = false; 
             
+            // Сброс
+            _isTutorialComplete = false;
+            _tutorialStep = 0;
+            
             _hudWindow = await _windowService.OpenAndGet<HudWindow>(WindowID.HUD);
-            _hudWindow.BindButtons(OnRestartClicked, OnMenuClicked, StartBattle);
-            _hudWindow.SetStartButtonVisible(true);
+            _hudWindow.BindButtons(OnRestartClicked, OnMenuClicked, StartBattle, OnSettingsClicked);
+            
+            _hudWindow.SetStartButtonVisible(false);
             
             _inputService.Enable();
             _inputService.OnCancelPerformed += HandleEsc;
@@ -83,22 +101,134 @@ namespace Core.States
             _inputService.OnHotbarHotkeyPressed += HandleHotbarInput;
             
             _plantingService.Initialize();
+            _plantingService.OnPlantSelected += OnPlantSelected;
+            _plantingService.OnPlantingSuccess += OnPlantingSuccess;
             
+            _waveService.OnLevelCompleted += HandleVictory;
+
             if (_levelProvider.CurrentLevel != null)
                 SubscribeToLevel();
             else
                 _levelProvider.OnLevelLoaded += SubscribeToLevel;
 
             EnterPlantingMode();
+            
+            var levelData = _staticData.GetLevelData();
+            if (levelData != null && levelData.levelMusic != null)
+            {
+                _audioService.PlayMusic(levelData.levelMusic);
+            }
+
+            _windowService.Close(WindowID.Loading);
+
+            StartTutorial();
         }
 
+        private void StartTutorial()
+        {
+            _tutorialStep = 0;
+            _hudWindow.SetDimmed(true);
+            _hudWindow.ShowTutorialStep1_Selection();
+        }
+
+        private void OnPlantSelected(PlantType type)
+        {
+            if (_isTutorialComplete) return;
+
+            // Шаг 2: Игрок выбрал растение. Убираем затемнение, показываем стрелку на Origin2
+            if (type != PlantType.None && _tutorialStep == 0)
+            {
+                _tutorialStep = 1;
+                
+                _hudWindow.SetDimmed(false); // Выключаем Dimmed
+                
+                // Включаем призрака
+                var data = _staticData.GetPlantData(type);
+                if (data != null) _hudWindow.SetGhost(data.icon);
+                
+                // Показываем стрелку на Origin2
+                _hudWindow.ShowTutorialStep2_Placement();
+            }
+            else if (type == PlantType.None)
+            {
+                _hudWindow.SetGhost(null);
+            }
+        }
+
+        private void OnPlantingSuccess(Vector3 pos)
+        {
+            if (_isTutorialComplete) return;
+            
+            // Шаг 3: Растение посажено. Стрелка указывает на него в мире.
+            if (_tutorialStep == 1)
+            {
+                _tutorialStep = 2;
+                _hudWindow.SetGhost(null);
+                
+                // Находим объект растения
+                if (_gridService.WorldToGrid(pos, out int l, out int r))
+                {
+                    var plantObj = _gridService.GetPlantAt(l, r);
+                    if (plantObj != null)
+                    {
+                        var possessable = plantObj.GetComponent<IPossessablePlant>();
+                        Transform target = possessable != null ? possessable.CameraMountPoint : plantObj.transform;
+                        _hudWindow.ShowTutorialStep3_Possession(target);
+                    }
+                }
+            }
+        }
+
+        private async void EnterPossessionMode(IPossessablePlant plant)
+        {
+            // Финиш туториала
+            if (!_isTutorialComplete && _tutorialStep == 2)
+            {
+                _isTutorialComplete = true;
+                _hudWindow.HideTutorialArrow();
+                _hudWindow.SetDimmed(false);
+                _hudWindow.SetStartButtonVisible(true);
+            }
+            
+            if (!_isBattleStarted && _isTutorialComplete) StartBattle();
+
+            _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
+            
+            if (_currentPossessedPlant != null) _currentPossessedPlant.SetPossessed(false);
+            
+            _isInPossessionMode = true;
+            _currentPossessedPlant = plant;
+            
+            _plantingService.ClearSelection();
+            _hudWindow.SetGhost(null); 
+            
+            _hudWindow.SetGameplayVisibility(false);
+            _hudWindow.SetActivePlant(plant);
+            
+            await _cameraService.MoveToTarget(plant.CameraMountPoint);
+            plant.SetPossessed(true);
+            
+            if (!_windowService.IsWindowOpened(WindowID.Settings))
+            {
+                SetCursorState(false);
+            }
+        }
+
+        // ... Остальной код (Exit, Subscribe, HandleClick, и т.д.) без изменений ...
         public void Exit()
         {
             _windowService.Close(WindowID.HUD);
+            if (_windowService.IsWindowOpened(WindowID.Settings))
+                _windowService.Close(WindowID.Settings);
+            
             _inputService.Disable();
             _inputService.OnCancelPerformed -= HandleEsc;
             _inputService.OnClickPerformed -= HandleClick;
             _inputService.OnHotbarHotkeyPressed -= HandleHotbarInput;
+            
+            _plantingService.OnPlantSelected -= OnPlantSelected;
+            _plantingService.OnPlantingSuccess -= OnPlantingSuccess;
+            _waveService.OnLevelCompleted -= HandleVictory;
             
             if (_levelProvider.CurrentLevel?.FinishTrigger != null)
                 _levelProvider.CurrentLevel.FinishTrigger.OnZombieCrossed -= HandleDefeat;
@@ -106,6 +236,8 @@ namespace Core.States
             _levelProvider.OnLevelLoaded -= SubscribeToLevel;
             
             _plantingService.Dispose();
+            
+            SetCursorState(true);
         }
 
         private void SubscribeToLevel()
@@ -121,73 +253,71 @@ namespace Core.States
         private void StartBattle()
         {
             if (_isBattleStarted) return;
-            
             _isBattleStarted = true;
             _hudWindow.SetStartButtonVisible(false);
             _waveService.StartLevel();
+        }
 
-            var activePlants = _plantTracker.GetAll();
-            if (activePlants.Count > 0)
-            {
-                EnterPossessionMode(activePlants[0]);
-            }
+        private void HandleVictory()
+        {
+            if (_isGameOver) return;
+            FinishGame(true);
         }
 
         private void HandleDefeat(ZombieController killer)
         {
             if (_isGameOver) return;
+            
+            var levelData = _staticData.GetLevelData();
+            if (levelData != null && levelData.gameOverSound != null)
+            {
+                AudioSource.PlayClipAtPoint(levelData.gameOverSound, _levelProvider.CurrentLevel.OriginPosition, _audioService.SfxVolume);
+            }
+            
+            FinishGame(false);
+        }
+
+        private void FinishGame(bool isVictory)
+        {
             _isGameOver = true;
             _waveService.StopLevel();
-
-            killer.StopMovement();
-
-            var enemies = _levelProvider.CurrentLevel.ActiveEnemies.ToList();
-            foreach (var enemy in enemies)
-            {
-                if (enemy is ZombieController z && z != killer)
-                    Object.Destroy(z.gameObject);
-            }
-
-            if (_currentPossessedPlant != null)
-            {
+            _inputService.Disable();
+            
+            if (_isInPossessionMode && _currentPossessedPlant != null)
                 _currentPossessedPlant.SetPossessed(false);
-                _currentPossessedPlant = null;
-            }
-            _isInPossessionMode = false;
             
             _cameraService.SetTacticalView(_levelProvider.CurrentLevel.CameraTacticalPoint);
-            
             _hudWindow.SetGameplayVisibility(false);
             _hudWindow.SetActivePlant(null);
             _hudWindow.SetStartButtonVisible(false);
-
-            _inputService.Disable();
-            _plantingService.ClearSelection();
             
-            _hudWindow.ShowGameOverPanel();
+            SetCursorState(true);
+            _hudWindow.ShowGameOverPanel(isVictory);
         }
 
-        private void OnRestartClicked()
+        private void OnRestartClicked() => _stateMachine.ChangeState<GameLoadState>();
+        private void OnMenuClicked() => _stateMachine.ChangeState<MainMenuState>();
+        
+        private void OnSettingsClicked()
         {
-            _stateMachine.ChangeState<GameLoadState>();
-        }
-
-        private void OnMenuClicked()
-        {
-            _stateMachine.ChangeState<MainMenuState>();
+            if (!_windowService.IsWindowOpened(WindowID.Settings))
+            {
+                 _windowService.Open(WindowID.Settings);
+                 SetCursorState(true);
+            }
+            else
+            {
+                _windowService.Close(WindowID.Settings);
+                if (_isInPossessionMode) SetCursorState(false);
+            }
         }
 
         private void HandleHotbarInput(int keyIndex)
         {
             if (_isGameOver || Time.time < _nextModeSwitchTime) return;
-            
             int listIndex = keyIndex - 1;
             var plant = _plantTracker.GetPlantByIndex(listIndex);
-            
-            if (plant != null && _currentPossessedPlant != plant)
-            {
-                EnterPossessionMode(plant);
-            }
+            if (plant != null && _currentPossessedPlant != plant) EnterPossessionMode(plant);
         }
 
         private void HandleClick()
@@ -219,8 +349,12 @@ namespace Core.States
 
         private void HandleEsc()
         {
-            if (_isGameOver || Time.time < _nextModeSwitchTime) return;
-            EnterPlantingMode();
+            if (_isInPossessionMode)
+            {
+                EnterPlantingMode();
+                return;
+            }
+            OnSettingsClicked();
         }
 
         private void EnterPlantingMode()
@@ -247,26 +381,14 @@ namespace Core.States
 
             _cameraService.SetTacticalView(_levelProvider.CurrentLevel.CameraTacticalPoint);
             _hudWindow.SetGameplayVisibility(true);
+            
+            SetCursorState(true);
         }
 
-        private async void EnterPossessionMode(IPossessablePlant plant)
+        private void SetCursorState(bool isVisible)
         {
-            if (!_isBattleStarted) StartBattle();
-
-            _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
-            
-            if (_currentPossessedPlant != null) _currentPossessedPlant.SetPossessed(false);
-            
-            _isInPossessionMode = true;
-            _currentPossessedPlant = plant;
-            
-            _plantingService.ClearSelection();
-            
-            _hudWindow.SetGameplayVisibility(false);
-            _hudWindow.SetActivePlant(plant);
-            
-            await _cameraService.MoveToTarget(plant.CameraMountPoint);
-            plant.SetPossessed(true);
+            Cursor.visible = isVisible;
+            Cursor.lockState = isVisible ? CursorLockMode.None : CursorLockMode.Locked;
         }
     }
 }

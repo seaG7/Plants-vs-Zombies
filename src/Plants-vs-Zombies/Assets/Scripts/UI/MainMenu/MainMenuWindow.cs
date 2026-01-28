@@ -9,12 +9,13 @@ using Zenject;
 namespace UI.MainMenu
 {
     /// <summary>
-    /// Controls the main menu interaction logic.
+    /// Controls main menu interactions: Start, Settings, Exit.
     /// </summary>
     public class MainMenuWindow : MonoBehaviour
     {
         [SerializeField] private Button _startButton;
         [SerializeField] private Button _settingsButton;
+        [SerializeField] private Button _exitButton;
 
         private StateMachine _stateMachine;
         private IWindowService _windowService;
@@ -30,12 +31,14 @@ namespace UI.MainMenu
         {
             _startButton.onClick.AddListener(OnStartClicked);
             _settingsButton.onClick.AddListener(OnSettingsClicked);
+            _exitButton.onClick.AddListener(OnExitClicked);
         }
 
         private void OnDestroy()
         {
             _startButton.onClick.RemoveListener(OnStartClicked);
             _settingsButton.onClick.RemoveListener(OnSettingsClicked);
+            _exitButton.onClick.RemoveListener(OnExitClicked);
         }
 
         private void OnStartClicked()
@@ -46,6 +49,14 @@ namespace UI.MainMenu
         private void OnSettingsClicked()
         {
             _windowService.Open(WindowID.Settings);
+        }
+
+        private void OnExitClicked()
+        {
+            Application.Quit();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#endif
         }
     }
 }

@@ -36,16 +36,25 @@ MonoBehaviour:
   trajectoryMaterial: {fileID: 2100000, guid: 619f291c9ee86234088c9bfef137e09d, type: 2}
   trajectoryWidth: 0.4
   impactRadius: 1.5
-  fireCooldown: 4
+  fireCooldown: 5
   rotationSpeed: 25
   mouseSensitivity: 0.05
-  initialSpeed: 100
+  initialSpeed: 80
   minPitch: -30
   maxPitch: 30
   minYaw: -45
   maxYaw: 45
-  projectileMass: 3
+  projectileMass: 10
   projectileRadius: 0.2
-  dragCoeff: 0.47
+  dragCoeff: 0.05
   airDensity: 1.225
   wind: {x: 0, y: 0, z: 0}
+  impactEffect:
+    m_AssetGUID: 
+    m_SubObjectName: 
+    m_SubObjectGUID: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
+  fireSound: {fileID: 0}
+  hitSound: {fileID: 8300000, guid: fe01793ab79253e40aa080604c9e8bd8, type: 3}
+  plantSound: {fileID: 8300000, guid: 2dab1aa8d8bc12d4aa17ae34ba55e6d1, type: 3}

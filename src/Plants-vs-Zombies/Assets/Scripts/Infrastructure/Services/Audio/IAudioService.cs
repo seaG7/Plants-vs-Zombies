@@ -1,4 +1,5 @@
 ﻿using System;
+using UnityEngine;
 
 namespace Infrastructure.Services.Audio
 {
@@ -11,5 +12,6 @@ namespace Infrastructure.Services.Audio
         void SetMasterVolume(float value);
         void SetMusicVolume(float value);
         void SetSfxVolume(float value);
+        void PlayMusic(AudioClip clip);
     }
 }

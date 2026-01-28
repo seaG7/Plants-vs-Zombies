@@ -21,7 +21,15 @@ MonoBehaviour:
     m_SubObjectGUID: 
     m_SubObjectType: 
     m_EditorAssetChanged: 0
+  spawnEffect:
+    m_AssetGUID: de329e2da3b22c04186cc09f47ab82fb
+    m_SubObjectName: 
+    m_SubObjectGUID: 
+    m_SubObjectType: 
+    m_EditorAssetChanged: 0
   maxHealth: 100
-  moveSpeed: 5
+  moveSpeed: 6
   damage: 10
-  killReward: 50
+  killReward: 25
+  spawnSound: {fileID: 0}
+  deathSound: {fileID: 8300000, guid: 453d9ffc23487f24ba21ad78f63bab6c, type: 3}

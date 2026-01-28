@@ -25,7 +25,20 @@ namespace Infrastructure.Services.UI
                 Debug.LogError($"[WindowService] Path not found for ID: {windowID}");
                 return;
             }
-            await _uiFactory.CreateScreen(path, windowID);
+            
+            var windowObj = await _uiFactory.CreateScreen(path, windowID);
+            
+            if (windowID == WindowID.Loading && windowObj != null)
+            {
+                windowObj.transform.SetParent(null);
+                Object.DontDestroyOnLoad(windowObj);
+
+                var canvas = windowObj.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.sortingOrder = 999; 
+                }
+            }
         }
 
         public async Task<T> OpenAndGet<T>(WindowID windowID) where T : Component
@@ -44,6 +57,7 @@ namespace Infrastructure.Services.UI
             WindowID.Loading => UIPaths.LOADING_SCREEN,
             WindowID.MainMenu => UIPaths.MAIN_MENU,
             WindowID.HUD => UIPaths.HUD,
+            WindowID.Settings => UIPaths.SETTINGS,
             _ => null
         };
     }
