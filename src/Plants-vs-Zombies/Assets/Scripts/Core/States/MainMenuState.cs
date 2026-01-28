@@ -5,6 +5,7 @@ using Infrastructure.Services;
 using Infrastructure.Services.Audio;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Window;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
@@ -43,6 +44,8 @@ namespace Core.States
             var gameConfig = _staticData.GetGameConfig();
             if (gameConfig != null && gameConfig.mainMenuMusic != null)
             {
+                Debug.Log("MUSIC");
+                _audioService.InitializeMusicSource();
                 _audioService.PlayMusic(gameConfig.mainMenuMusic);
             }
             

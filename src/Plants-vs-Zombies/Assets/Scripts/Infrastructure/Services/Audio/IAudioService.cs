@@ -13,5 +13,6 @@ namespace Infrastructure.Services.Audio
         void SetMusicVolume(float value);
         void SetSfxVolume(float value);
         void PlayMusic(AudioClip clip);
+        void InitializeMusicSource();
     }
 }

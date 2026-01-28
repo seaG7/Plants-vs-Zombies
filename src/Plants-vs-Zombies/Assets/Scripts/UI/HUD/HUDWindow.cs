@@ -36,11 +36,10 @@ namespace UI.HUD
         [Header("Tutorial UI")]
         [SerializeField] private GameObject _dimmedPanel; 
         [SerializeField] private RectTransform _tutorialArrow;
-        [SerializeField] private RectTransform _tutorialOrigin1;
-        [SerializeField] private RectTransform _tutorialOrigin2;
+        [SerializeField] private RectTransform _tutorialOrigin1; // Выбор карты
+        [SerializeField] private RectTransform _tutorialOrigin2; // Поле (Grid)
         
         [SerializeField] private float _arrowAnimDuration = 0.6f;
-        [SerializeField] private float _arrowWorldYOffset = 50f;
 
         [Header("Action Mode UI")]
         [SerializeField] private GameObject _actionPanel;
@@ -60,6 +59,7 @@ namespace UI.HUD
         [Header("Battle Controls")]
         [SerializeField] private Button _startBattleButton;
 
+        // ... (Services and fields) ...
         [Header("Text Config")]
         [SerializeField] private string _textReady = "СНАРЯД ГОТОВ";
         [SerializeField] private string _textReloading = "ПЕРЕЗАРЯДКА...";
@@ -79,9 +79,6 @@ namespace UI.HUD
         private float _lastUpdateTimer;
         private IPossessablePlant _activePlant;
         private float _warningTimer;
-
-        private bool _isArrowTrackingWorld;
-        private Transform _worldTrackingTarget;
         private Tween _arrowTween;
 
         [Inject]
@@ -128,6 +125,8 @@ namespace UI.HUD
             UnsubscribeActivePlant();
         }
 
+        // --- Tutorial Public Methods ---
+
         public void SetDimmed(bool isActive)
         {
             if (_dimmedPanel != null)
@@ -139,8 +138,7 @@ namespace UI.HUD
             if (_tutorialOrigin1 == null) return;
             
             SetupArrow();
-            _isArrowTrackingWorld = false;
-
+            
             _tutorialArrow.position = _tutorialOrigin1.position;
             _tutorialArrow.rotation = Quaternion.Euler(0, 0, 0);
 
@@ -153,10 +151,25 @@ namespace UI.HUD
         public void ShowTutorialStep2_Placement()
         {
             if (_tutorialOrigin2 == null) return;
-
             SetupArrow();
-            _isArrowTrackingWorld = false;
+            AnimateArrowAtOrigin2();
+        }
 
+        // ШАГ 3: Оставляем стрелку там же, где она была (Origin2)
+        public void ShowTutorialStep3_Possession()
+        {
+            if (_tutorialOrigin2 == null) return;
+            // Убеждаемся, что стрелка активна и на месте
+            if (!_tutorialArrow.gameObject.activeSelf)
+            {
+                SetupArrow();
+                AnimateArrowAtOrigin2();
+            }
+            // Можно добавить пульсацию, если хочется отличий
+        }
+
+        private void AnimateArrowAtOrigin2()
+        {
             _tutorialArrow.position = _tutorialOrigin2.position;
             _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
 
@@ -166,19 +179,6 @@ namespace UI.HUD
                 .SetEase(Ease.InOutSine);
         }
 
-        public void ShowTutorialStep3_Possession(Transform target)
-        {
-            SetupArrow();
-            _isArrowTrackingWorld = true;
-            _worldTrackingTarget = target;
-            
-            _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
-
-            // Анимация пульсации
-            _arrowTween = _tutorialArrow.DOScale(1.2f, _arrowAnimDuration)
-                .SetLoops(-1, LoopType.Yoyo);
-        }
-
         public void HideTutorialArrow()
         {
             if (_tutorialArrow != null)
@@ -186,8 +186,6 @@ namespace UI.HUD
                 _arrowTween?.Kill();
                 _tutorialArrow.gameObject.SetActive(false);
             }
-            _isArrowTrackingWorld = false;
-            _worldTrackingTarget = null;
         }
 
         public void SetGhost(Sprite sprite)
@@ -223,28 +221,10 @@ namespace UI.HUD
             {
                 _plantingGhostImage.transform.position = _inputService.GetPointerPosition();
             }
-
-            if (_isArrowTrackingWorld && _tutorialArrow.gameObject.activeSelf && _worldTrackingTarget != null)
-            {
-                Vector3 screenPos = Camera.main.WorldToScreenPoint(_worldTrackingTarget.position);
-                
-                // Если Z < 0, объект сзади камеры
-                if (screenPos.z < 0) 
-                {
-                    _tutorialArrow.gameObject.SetActive(false);
-                }
-                else
-                {
-                    if (!_tutorialArrow.gameObject.activeSelf) 
-                        _tutorialArrow.gameObject.SetActive(true);
-
-                    screenPos.z = 0;
-
-                    _tutorialArrow.GetComponentInChildren<RectTransform>().position = new Vector3(0, _arrowWorldYOffset, 0);
-                }
-            }
+            // Логика 3D трекинга полностью убрана
         }
         
+        // ... (BindButtons, ShowGameOverPanel, SetActivePlant...)
         public void BindButtons(Action onRestart, Action onMenu, Action onStartBattle, Action onSettings)
         {
             _restartButton.onClick.AddListener(() => onRestart?.Invoke());
@@ -260,6 +240,7 @@ namespace UI.HUD
             _gameOverTitle.text = isVictory ? "VICTORY!" : "GAME OVER";
             _settingsButton.gameObject.SetActive(false);
             _exitToMenuButton.gameObject.SetActive(false);
+            
             HideTutorialArrow();
             SetGhost(null);
             SetDimmed(false);
@@ -269,26 +250,14 @@ namespace UI.HUD
         {
             UnsubscribeActivePlant();
             _activePlant = plant;
-
-            if (_activePlant != null)
-            {
-                ToggleActionPanel(true);
-                _activePlant.OnFireFailedCooldown += ShowCooldownWarning;
-            }
-            else
-            {
-                ToggleActionPanel(false);
-            }
+            if (_activePlant != null) { ToggleActionPanel(true); _activePlant.OnFireFailedCooldown += ShowCooldownWarning; }
+            else { ToggleActionPanel(false); }
             RebuildActivePlantsList();
         }
 
         private void UnsubscribeActivePlant()
         {
-            if (_activePlant != null)
-            {
-                _activePlant.OnFireFailedCooldown -= ShowCooldownWarning;
-                _activePlant = null;
-            }
+            if (_activePlant != null) { _activePlant.OnFireFailedCooldown -= ShowCooldownWarning; _activePlant = null; }
         }
         
         private void ShowCooldownWarning()
@@ -304,41 +273,22 @@ namespace UI.HUD
             float progress = _activePlant.GetReloadProgress();
             _cooldownSlider.value = progress;
             bool isReady = progress >= 0.99f;
-            if (isReady)
-            {
-                _warningTimer = 0f;
-                _cooldownStatusText.text = _textReady;
-                _cooldownStatusText.color = _colorReady;
-            }
-            else if (_warningTimer > 0)
-            {
-                _warningTimer -= Time.deltaTime;
-            }
-            else
-            {
-                _cooldownStatusText.text = _textReloading;
-                _cooldownStatusText.color = Color.white;
-            }
+            if (isReady) { _warningTimer = 0f; _cooldownStatusText.text = _textReady; _cooldownStatusText.color = _colorReady; }
+            else if (_warningTimer > 0) { _warningTimer -= Time.deltaTime; }
+            else { _cooldownStatusText.text = _textReloading; _cooldownStatusText.color = Color.white; }
         }
 
         private void UpdateFPS()
         {
             _lastUpdateTimer += Time.deltaTime;
-            if (_lastUpdateTimer >= 0.5f)
-            {
-                _fpsText.text = $"{_fpsService.CurrentFps:F0}";
-                _lastUpdateTimer = 0f;
-            }
+            if (_lastUpdateTimer >= 0.5f) { _fpsText.text = $"{_fpsService.CurrentFps:F0}"; _lastUpdateTimer = 0f; }
         }
         
         private void UpdateCardsAvailability()
         {
             int currentSun = _economyService.CurrentSun;
             var plants = _staticData.GetAllPlants();
-            for (int i = 0; i < _cards.Count && i < plants.Count; i++)
-            {
-                _cards[i].SetAffordable(currentSun >= plants[i].cost);
-            }
+            for (int i = 0; i < _cards.Count && i < plants.Count; i++) { _cards[i].SetAffordable(currentSun >= plants[i].cost); }
         }
 
         private void InitializeCards()
@@ -361,8 +311,7 @@ namespace UI.HUD
             for (int i = 0; i < plants.Count; i++)
             {
                 var plant = plants[i];
-                var view = _container.
-                    InstantiatePrefabForComponent<ActivePlantView>(_activePlantPrefab, _activePlantsContainer);
+                var view = _container.InstantiatePrefabForComponent<ActivePlantView>(_activePlantPrefab, _activePlantsContainer);
                 PlantType type = PlantType.None;
                 if (plant is CannonController) type = PlantType.CoconutCannon;
                 else if (plant is PeashooterController) type = PlantType.Peashooter;
@@ -374,17 +323,8 @@ namespace UI.HUD
         private void OnCardClicked(PlantData data) => _plantingService.SelectPlant(data.type);
         private void HandlePlantSelected(PlantType type) { }
         private void UpdateSunDisplay(int amount) => _sunText.text = $"{amount}";
-
         public void SetGameplayVisibility(bool isVisible) => _gameplayPanel.SetActive(isVisible);
-        
-        private void ToggleActionPanel(bool isActive)
-        {
-            if (_actionPanel != null) _actionPanel.SetActive(isActive);
-        }
-        public void SetStartButtonVisible(bool isVisible)
-        {
-            if (_startBattleButton != null) 
-                _startBattleButton.gameObject.SetActive(isVisible);
-        }
+        private void ToggleActionPanel(bool isActive) { if (_actionPanel != null) _actionPanel.SetActive(isActive); }
+        public void SetStartButtonVisible(bool isVisible) { if (_startBattleButton != null) _startBattleButton.gameObject.SetActive(isVisible); }
     }
 }

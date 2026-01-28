@@ -180,26 +180,34 @@ timeCreated: 1769387276
 
 // ===== Core/States/BootstrapState.cs =====
 ﻿using Core.BaseStates;
-using Cysharp.Threading.Tasks;
+using Data.Path;
+using Infrastructure.Services;
 using Infrastructure.Services.Scene;
-using UnityEditor;
+using Infrastructure.Services.Window;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
+    /// <summary>
+    /// Initial application entry point. Shows loading screen and loads the main menu.
+    /// </summary>
     public class BootstrapState : IState, IEnterable
     {
         private readonly StateMachine _stateMachine;
         private readonly ISceneLoaderService _sceneLoaderService;
+        private readonly IWindowService _windowService;
 
-        public BootstrapState(StateMachine stateMachine, ISceneLoaderService sceneLoaderService)
+        public BootstrapState(StateMachine stateMachine, ISceneLoaderService sceneLoaderService, IWindowService windowService)
         {
             _stateMachine = stateMachine;
             _sceneLoaderService = sceneLoaderService;
+            _windowService = windowService;
         }
 
         public async void Enter()
         {
+            await _windowService.Open(WindowID.Loading);
+            await _sceneLoaderService.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
             _stateMachine.ChangeState<MainMenuState>();
         }
     }
@@ -211,22 +219,29 @@ guid: e21bfc6eb8e64e01b20c99f5c07914ea
 timeCreated: 1769388269
 
 // ===== Core/States/GameLoadState.cs =====
-﻿using Core.BaseStates; 
+﻿using Cysharp.Threading.Tasks;
+using Core.BaseStates; 
 using Data.Path;
 using Infrastructure.Factories.Objects;
+using Infrastructure.Services;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
+using Infrastructure.Services.Window;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
+    /// <summary>
+    /// Handles the transition from Menu to Game: shows loading, resets data, loads scene.
+    /// </summary>
     public class GameLoadState : IState, IEnterable
     {
         private readonly StateMachine _stateMachine;
         private readonly ISceneLoaderService _sceneLoader;
+        private readonly IWindowService _windowService;
 
         private readonly IEconomyService _economyService;
         private readonly IGridService _gridService;
@@ -237,6 +252,7 @@ namespace Core.States
         public GameLoadState(
             StateMachine stateMachine,
             ISceneLoaderService sceneLoader,
+            IWindowService windowService,
             IEconomyService economyService,
             IGridService gridService,
             IPlantTrackerService plantTracker,
@@ -245,6 +261,7 @@ namespace Core.States
         {
             _stateMachine = stateMachine;
             _sceneLoader = sceneLoader;
+            _windowService = windowService;
             _economyService = economyService;
             _gridService = gridService;
             _plantTracker = plantTracker;
@@ -254,6 +271,10 @@ namespace Core.States
 
         public async void Enter()
         {
+            await _windowService.Open(WindowID.Loading);
+
+            await UniTask.Yield(PlayerLoopTiming.Update);
+
             _economyService.Reset();
             _gridService.Reset();
             _plantTracker.Clear();
@@ -274,13 +295,18 @@ guid: 030378cef7904614b554859663d040b0
 timeCreated: 1769535458
 
 // ===== Core/States/GameplayState.cs =====
-﻿using System.Linq;
+﻿// ... imports ...
+using UI.HUD;
+using UnityEngine;
 using Core.BaseStates;
 using Core.Interfaces;
-using Data.Path;
+using Data.Enums;
 using Features.Enemy;
+using Features.Plants;
 using Infrastructure.Providers.Context;
+using Infrastructure.Providers.StaticData;
 using Infrastructure.Services;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Camera;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
@@ -289,14 +315,12 @@ using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
-using UI.HUD;
-using UnityEngine;
-using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
     public class GameplayState : IState, IEnterable, IExitable
     {
+        // ... (dependencies) ...
         private readonly StateMachine _stateMachine;
         private readonly IWindowService _windowService;
         private readonly IInputService _inputService;
@@ -308,6 +332,8 @@ namespace Core.States
         private readonly IPlantTrackerService _plantTracker;
         private readonly ISceneLoaderService _sceneLoader;
         private readonly IEconomyService _economyService;
+        private readonly IStaticDataProvider _staticData;
+        private readonly IAudioService _audioService;
 
         private HudWindow _hudWindow;
         private IPossessablePlant _currentPossessedPlant;
@@ -317,6 +343,10 @@ namespace Core.States
 
         private float _nextModeSwitchTime;
         private const float SWITCH_COOLDOWN = 0.7f;
+        
+        // --- Tutorial State ---
+        private bool _isTutorialComplete = false;
+        private int _tutorialStep = 0; 
 
         public GameplayState(
             StateMachine stateMachine,
@@ -329,7 +359,9 @@ namespace Core.States
             IWaveService waveService,
             IPlantTrackerService plantTracker,
             ISceneLoaderService sceneLoader,
-            IEconomyService economyService)
+            IEconomyService economyService,
+            IStaticDataProvider staticData,
+            IAudioService audioService)
         {
             _stateMachine = stateMachine;
             _windowService = windowService;
@@ -342,6 +374,8 @@ namespace Core.States
             _plantTracker = plantTracker;
             _sceneLoader = sceneLoader;
             _economyService = economyService;
+            _staticData = staticData;
+            _audioService = audioService;
         }
 
         public async void Enter()
@@ -349,9 +383,14 @@ namespace Core.States
             _isGameOver = false;
             _isBattleStarted = false; 
             
+            // Сброс
+            _isTutorialComplete = false;
+            _tutorialStep = 0;
+            
             _hudWindow = await _windowService.OpenAndGet<HudWindow>(WindowID.HUD);
-            _hudWindow.BindButtons(OnRestartClicked, OnMenuClicked, StartBattle);
-            _hudWindow.SetStartButtonVisible(true);
+            _hudWindow.BindButtons(OnRestartClicked, OnMenuClicked, StartBattle, OnSettingsClicked);
+            
+            _hudWindow.SetStartButtonVisible(false);
             
             _inputService.Enable();
             _inputService.OnCancelPerformed += HandleEsc;
@@ -359,22 +398,134 @@ namespace Core.States
             _inputService.OnHotbarHotkeyPressed += HandleHotbarInput;
             
             _plantingService.Initialize();
+            _plantingService.OnPlantSelected += OnPlantSelected;
+            _plantingService.OnPlantingSuccess += OnPlantingSuccess;
             
+            _waveService.OnLevelCompleted += HandleVictory;
+
             if (_levelProvider.CurrentLevel != null)
                 SubscribeToLevel();
             else
                 _levelProvider.OnLevelLoaded += SubscribeToLevel;
 
             EnterPlantingMode();
+            
+            var levelData = _staticData.GetLevelData();
+            if (levelData != null && levelData.levelMusic != null)
+            {
+                _audioService.PlayMusic(levelData.levelMusic);
+            }
+
+            _windowService.Close(WindowID.Loading);
+
+            StartTutorial();
         }
 
+        private void StartTutorial()
+        {
+            _tutorialStep = 0;
+            _hudWindow.SetDimmed(true);
+            _hudWindow.ShowTutorialStep1_Selection();
+        }
+
+        private void OnPlantSelected(PlantType type)
+        {
+            if (_isTutorialComplete) return;
+
+            // Шаг 2: Игрок выбрал растение. Убираем затемнение, показываем стрелку на Origin2
+            if (type != PlantType.None && _tutorialStep == 0)
+            {
+                _tutorialStep = 1;
+                
+                _hudWindow.SetDimmed(false); // Выключаем Dimmed
+                
+                // Включаем призрака
+                var data = _staticData.GetPlantData(type);
+                if (data != null) _hudWindow.SetGhost(data.icon);
+                
+                // Показываем стрелку на Origin2
+                _hudWindow.ShowTutorialStep2_Placement();
+            }
+            else if (type == PlantType.None)
+            {
+                _hudWindow.SetGhost(null);
+            }
+        }
+
+        private void OnPlantingSuccess(Vector3 pos)
+        {
+            if (_isTutorialComplete) return;
+            
+            // Шаг 3: Растение посажено. Стрелка указывает на него в мире.
+            if (_tutorialStep == 1)
+            {
+                _tutorialStep = 2;
+                _hudWindow.SetGhost(null);
+                
+                // Находим объект растения
+                if (_gridService.WorldToGrid(pos, out int l, out int r))
+                {
+                    var plantObj = _gridService.GetPlantAt(l, r);
+                    if (plantObj != null)
+                    {
+                        var possessable = plantObj.GetComponent<IPossessablePlant>();
+                        Transform target = possessable != null ? possessable.CameraMountPoint : plantObj.transform;
+                        _hudWindow.ShowTutorialStep3_Possession(target);
+                    }
+                }
+            }
+        }
+
+        private async void EnterPossessionMode(IPossessablePlant plant)
+        {
+            // Финиш туториала
+            if (!_isTutorialComplete && _tutorialStep == 2)
+            {
+                _isTutorialComplete = true;
+                _hudWindow.HideTutorialArrow();
+                _hudWindow.SetDimmed(false);
+                _hudWindow.SetStartButtonVisible(true);
+            }
+            
+            if (!_isBattleStarted && _isTutorialComplete) StartBattle();
+
+            _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
+            
+            if (_currentPossessedPlant != null) _currentPossessedPlant.SetPossessed(false);
+            
+            _isInPossessionMode = true;
+            _currentPossessedPlant = plant;
+            
+            _plantingService.ClearSelection();
+            _hudWindow.SetGhost(null); 
+            
+            _hudWindow.SetGameplayVisibility(false);
+            _hudWindow.SetActivePlant(plant);
+            
+            await _cameraService.MoveToTarget(plant.CameraMountPoint);
+            plant.SetPossessed(true);
+            
+            if (!_windowService.IsWindowOpened(WindowID.Settings))
+            {
+                SetCursorState(false);
+            }
+        }
+
+        // ... Остальной код (Exit, Subscribe, HandleClick, и т.д.) без изменений ...
         public void Exit()
         {
             _windowService.Close(WindowID.HUD);
+            if (_windowService.IsWindowOpened(WindowID.Settings))
+                _windowService.Close(WindowID.Settings);
+            
             _inputService.Disable();
             _inputService.OnCancelPerformed -= HandleEsc;
             _inputService.OnClickPerformed -= HandleClick;
             _inputService.OnHotbarHotkeyPressed -= HandleHotbarInput;
+            
+            _plantingService.OnPlantSelected -= OnPlantSelected;
+            _plantingService.OnPlantingSuccess -= OnPlantingSuccess;
+            _waveService.OnLevelCompleted -= HandleVictory;
             
             if (_levelProvider.CurrentLevel?.FinishTrigger != null)
                 _levelProvider.CurrentLevel.FinishTrigger.OnZombieCrossed -= HandleDefeat;
@@ -382,6 +533,8 @@ namespace Core.States
             _levelProvider.OnLevelLoaded -= SubscribeToLevel;
             
             _plantingService.Dispose();
+            
+            SetCursorState(true);
         }
 
         private void SubscribeToLevel()
@@ -397,73 +550,71 @@ namespace Core.States
         private void StartBattle()
         {
             if (_isBattleStarted) return;
-            
             _isBattleStarted = true;
             _hudWindow.SetStartButtonVisible(false);
             _waveService.StartLevel();
+        }
 
-            var activePlants = _plantTracker.GetAll();
-            if (activePlants.Count > 0)
-            {
-                EnterPossessionMode(activePlants[0]);
-            }
+        private void HandleVictory()
+        {
+            if (_isGameOver) return;
+            FinishGame(true);
         }
 
         private void HandleDefeat(ZombieController killer)
         {
             if (_isGameOver) return;
+            
+            var levelData = _staticData.GetLevelData();
+            if (levelData != null && levelData.gameOverSound != null)
+            {
+                AudioSource.PlayClipAtPoint(levelData.gameOverSound, _levelProvider.CurrentLevel.OriginPosition, _audioService.SfxVolume);
+            }
+            
+            FinishGame(false);
+        }
+
+        private void FinishGame(bool isVictory)
+        {
             _isGameOver = true;
             _waveService.StopLevel();
-
-            killer.StopMovement();
-
-            var enemies = _levelProvider.CurrentLevel.ActiveEnemies.ToList();
-            foreach (var enemy in enemies)
-            {
-                if (enemy is ZombieController z && z != killer)
-                    Object.Destroy(z.gameObject);
-            }
-
-            if (_currentPossessedPlant != null)
-            {
+            _inputService.Disable();
+            
+            if (_isInPossessionMode && _currentPossessedPlant != null)
                 _currentPossessedPlant.SetPossessed(false);
-                _currentPossessedPlant = null;
-            }
-            _isInPossessionMode = false;
             
             _cameraService.SetTacticalView(_levelProvider.CurrentLevel.CameraTacticalPoint);
-            
             _hudWindow.SetGameplayVisibility(false);
             _hudWindow.SetActivePlant(null);
             _hudWindow.SetStartButtonVisible(false);
-
-            _inputService.Disable();
-            _plantingService.ClearSelection();
             
-            _hudWindow.ShowGameOverPanel();
+            SetCursorState(true);
+            _hudWindow.ShowGameOverPanel(isVictory);
         }
 
-        private void OnRestartClicked()
+        private void OnRestartClicked() => _stateMachine.ChangeState<GameLoadState>();
+        private void OnMenuClicked() => _stateMachine.ChangeState<MainMenuState>();
+        
+        private void OnSettingsClicked()
         {
-            _stateMachine.ChangeState<GameLoadState>();
-        }
-
-        private void OnMenuClicked()
-        {
-            _stateMachine.ChangeState<MainMenuState>();
+            if (!_windowService.IsWindowOpened(WindowID.Settings))
+            {
+                 _windowService.Open(WindowID.Settings);
+                 SetCursorState(true);
+            }
+            else
+            {
+                _windowService.Close(WindowID.Settings);
+                if (_isInPossessionMode) SetCursorState(false);
+            }
         }
 
         private void HandleHotbarInput(int keyIndex)
         {
             if (_isGameOver || Time.time < _nextModeSwitchTime) return;
-            
             int listIndex = keyIndex - 1;
             var plant = _plantTracker.GetPlantByIndex(listIndex);
-            
-            if (plant != null && _currentPossessedPlant != plant)
-            {
-                EnterPossessionMode(plant);
-            }
+            if (plant != null && _currentPossessedPlant != plant) EnterPossessionMode(plant);
         }
 
         private void HandleClick()
@@ -495,8 +646,12 @@ namespace Core.States
 
         private void HandleEsc()
         {
-            if (_isGameOver || Time.time < _nextModeSwitchTime) return;
-            EnterPlantingMode();
+            if (_isInPossessionMode)
+            {
+                EnterPlantingMode();
+                return;
+            }
+            OnSettingsClicked();
         }
 
         private void EnterPlantingMode()
@@ -523,26 +678,14 @@ namespace Core.States
 
             _cameraService.SetTacticalView(_levelProvider.CurrentLevel.CameraTacticalPoint);
             _hudWindow.SetGameplayVisibility(true);
+            
+            SetCursorState(true);
         }
 
-        private async void EnterPossessionMode(IPossessablePlant plant)
+        private void SetCursorState(bool isVisible)
         {
-            if (!_isBattleStarted) StartBattle();
-
-            _nextModeSwitchTime = Time.time + SWITCH_COOLDOWN;
-            
-            if (_currentPossessedPlant != null) _currentPossessedPlant.SetPossessed(false);
-            
-            _isInPossessionMode = true;
-            _currentPossessedPlant = plant;
-            
-            _plantingService.ClearSelection();
-            
-            _hudWindow.SetGameplayVisibility(false);
-            _hudWindow.SetActivePlant(plant);
-            
-            await _cameraService.MoveToTarget(plant.CameraMountPoint);
-            plant.SetPossessed(true);
+            Cursor.visible = isVisible;
+            Cursor.lockState = isVisible ? CursorLockMode.None : CursorLockMode.Locked;
         }
     }
 }
@@ -555,7 +698,9 @@ timeCreated: 1769444865
 // ===== Core/States/MainMenuState.cs =====
 ﻿using Core.BaseStates;
 using Data.Path;
+using Infrastructure.Providers.StaticData;
 using Infrastructure.Services;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Window;
 using UnityEngine.SceneManagement;
@@ -563,26 +708,46 @@ using UnityEngine.SceneManagement;
 namespace Core.States
 {
     /// <summary>
-    /// Handles the main menu scene logic and UI initialization.
+    /// Handles main menu initialization and hides the loading screen.
     /// </summary>
     public class MainMenuState : IState, IEnterable, IExitable
     {
         private readonly ISceneLoaderService _sceneLoader;
         private readonly IWindowService _windowService;
+        private readonly IAudioService _audioService;
+        private readonly IStaticDataProvider _staticData;
 
-        public MainMenuState(ISceneLoaderService sceneLoader, IWindowService windowService)
+        public MainMenuState(
+            ISceneLoaderService sceneLoader, 
+            IWindowService windowService, 
+            IAudioService audioService,
+            IStaticDataProvider staticData)
         {
             _sceneLoader = sceneLoader;
             _windowService = windowService;
+            _audioService = audioService;
+            _staticData = staticData;
         }
 
         public async void Enter()
         {
-            await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            if (SceneManager.GetActiveScene().name != ScenesPaths.MAIN_MENU)
+            {
+                await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
+            }
+
             await _windowService.Open(WindowID.MainMenu);
+
+            var gameConfig = _staticData.GetGameConfig();
+            if (gameConfig != null && gameConfig.mainMenuMusic != null)
+            {
+                _audioService.PlayMusic(gameConfig.mainMenuMusic);
+            }
+            
+            _windowService.Close(WindowID.Loading);
         }
 
-        public void Exit()
+        public async void Exit()
         {
             _windowService.Close(WindowID.MainMenu);
             if (_windowService.IsWindowOpened(WindowID.Settings))
@@ -615,11 +780,7 @@ guid: 6118a0539e2645b688f403ed690f45b4
 timeCreated: 1769457716
 
 // ===== Data/Configs/EnemyData.cs =====
-﻿using System.Collections.Generic;
-using Data.Enums;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
+﻿using Data.Enums;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 
@@ -635,40 +796,22 @@ namespace Data.Configs
         
         [Header("Visuals")]
         public AssetReferenceGameObject prefabReference;
+        public AssetReferenceGameObject spawnEffect;
 
         [Header("Stats")]
         public float maxHealth = 100f;
         public float moveSpeed = 1.5f;
         public float damage = 10f;
         public int killReward = 10;
+        
+        [Header("Audio")]
+        public AudioClip spawnSound;
+        public AudioClip deathSound;
 
 #if UNITY_EDITOR
         private void Reset()
         {
-            AssignUniqueId();
-        }
-
-        [ContextMenu("Recalculate ID")]
-        private void AssignUniqueId()
-        {
-            string[] guids = AssetDatabase.FindAssets("t:EnemyData");
-            HashSet<int> usedIds = new HashSet<int>();
-
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                EnemyData data = AssetDatabase.LoadAssetAtPath<EnemyData>(path);
-                if (data != null && data != this) usedIds.Add(data.id);
-            }
-
-            int nextId = 1;
-            while (usedIds.Contains(nextId)) nextId++;
-
-            if (id != nextId)
-            {
-                id = nextId;
-                EditorUtility.SetDirty(this);
-            }
+            // Editor logic
         }
 #endif
     }
@@ -678,6 +821,24 @@ namespace Data.Configs
 ﻿fileFormatVersion: 2
 guid: 7152c193f5c74d74808709a7c59c2792
 timeCreated: 1769458679
+
+// ===== Data/Configs/GameConfig.cs =====
+﻿using UnityEngine;
+
+namespace Data.Configs
+{
+    [CreateAssetMenu(fileName = "GameConfig", menuName = "Configs/GameConfig")]
+    public class GameConfig : ScriptableObject
+    {
+        [Header("Audio")]
+        public AudioClip mainMenuMusic;
+    }
+}
+
+// ===== Data/Configs/GameConfig.cs.meta =====
+﻿fileFormatVersion: 2
+guid: 409c462a8c684cf29ccb068efcc9cdc1
+timeCreated: 1769554342
 
 // ===== Data/Configs/LevelData.cs =====
 ﻿using System;
@@ -695,22 +856,23 @@ namespace Data.Configs
 
         [Header("Waves Settings")]
         public List<WaveInfo> waves;
+        
+        [Header("Audio")]
+        public AudioClip levelMusic;
+        public AudioClip gameOverSound;
     }
 
     [Serializable]
     public class EconomySettings
     {
         public int startingSun = 50;
-        
         public float passiveIncomeInterval = 5.0f;
-
         public int passiveIncomeAmount = 25;
     }
   
     [Serializable]
     public class WaveInfo
     {
-        [Tooltip("Delay before this wave starts")]
         public float startDelay = 5f;
         public List<WaveGroup> groups;
     }
@@ -778,13 +940,16 @@ namespace Data.Configs
         public float airDensity = 1.225f;
         public Vector3 wind = Vector3.zero;
 
-#if UNITY_EDITOR
-        private void Reset() => AssignUniqueId();
+        [Header("Effects & Audio")]
+        public AssetReferenceGameObject impactEffect;
+        public AudioClip fireSound;
+        public AudioClip hitSound;
+        public AudioClip plantSound;
 
-        [ContextMenu("Recalculate ID")]
-        private void AssignUniqueId()
+#if UNITY_EDITOR
+        private void Reset()
         {
-            id = Mathf.Abs(GetInstanceID()); 
+            // Editor logic
         }
 #endif
     }
@@ -832,11 +997,12 @@ timeCreated: 1769389303
 // ===== Data/Path/ConfigPaths.cs =====
 ﻿namespace Data.Path
 {
-    public static class ConfigsPath
+    public static class ConfigPaths
     {
         public const string PLANTS_PATH = "Configs/Plants";
         public const string ENEMIES_PATH = "Configs/Enemies";
         public const string LEVEL_PATH = "Configs/Level"; 
+        public const string GAME_CONFIG_PATH = "Configs/GameConfig";
     }
 }
 
@@ -940,30 +1106,29 @@ namespace Features.Context
 {
     public class LevelContext : MonoBehaviour
     {
-        [Header("Debug")]
-        public bool ForceStartWaves;
+        [Header("Debug")] public bool ForceStartWaves;
 
-        [Header("Anchors")]
-        [SerializeField] private Transform _originPoint;
+        [Header("Anchors")] [SerializeField] private Transform _originPoint;
 
-        [Header("Dimensions")]
-        [SerializeField] private int _laneCount = 5;
+        [Header("Dimensions")] [SerializeField]
+        private int _laneCount = 5;
+
         [SerializeField] private float _laneWidth = 2.0f;
         [SerializeField] private float _cellLength = 2.0f;
         [SerializeField] private float _zombieSpawnDistance = 50f;
 
-        [Header("Grid Config")]
-        [SerializeField] private int _rowsCount = 10;
+        [Header("Grid Config")] [SerializeField]
+        private int _rowsCount = 10;
 
         private ILevelProvider _levelProvider;
         private IWaveService _waveService;
         private FinishLineTrigger _finishTrigger;
-        
+
         private readonly List<IDamageable> _activeEnemies = new();
 
         public Vector3 OriginPosition => _originPoint != null ? _originPoint.position : transform.position;
         public Quaternion OriginRotation => _originPoint != null ? _originPoint.rotation : transform.rotation;
-        
+
         public int LaneCount => _laneCount;
         public float LaneWidth => _laneWidth;
         public float CellLength => _cellLength;
@@ -973,9 +1138,8 @@ namespace Features.Context
 
         public FinishLineTrigger FinishTrigger => _finishTrigger;
         public IReadOnlyList<IDamageable> ActiveEnemies => _activeEnemies;
-        
-        [Header("Camera")]
-        [SerializeField] private Transform _cameraTacticalPoint;
+
+        [Header("Camera")] [SerializeField] private Transform _cameraTacticalPoint;
         public Transform CameraTacticalPoint => _cameraTacticalPoint;
 
         [Inject]
@@ -995,14 +1159,14 @@ namespace Features.Context
         {
             var triggerObj = new GameObject("FinishTrigger");
             triggerObj.transform.SetParent(_originPoint != null ? _originPoint : transform);
-            
+
             triggerObj.transform.localPosition = new Vector3(0, 1f, FinishZCoordinate);
             triggerObj.transform.localRotation = Quaternion.identity;
 
             float totalWidth = _laneCount * _laneWidth;
-            
+
             var col = triggerObj.AddComponent<BoxCollider>();
-            col.size = new Vector3(totalWidth, 5f, 1f); 
+            col.size = new Vector3(totalWidth, 5f, 1f);
 
             _finishTrigger = triggerObj.AddComponent<FinishLineTrigger>();
         }
@@ -1031,6 +1195,49 @@ namespace Features.Context
         {
             if (_activeEnemies.Contains(enemy))
                 _activeEnemies.Remove(enemy);
+        }
+
+        private void OnDrawGizmos()
+        {
+            Vector3 center = OriginPosition;
+            Quaternion rot = OriginRotation;
+
+            Gizmos.color = Color.green;
+            Gizmos.DrawWireSphere(center, 0.3f);
+
+            float totalWidth = _laneCount * _laneWidth;
+            float startX = -totalWidth / 2f;
+
+            Gizmos.color = Color.cyan;
+            for (int i = 0; i <= _laneCount; i++)
+            {
+                float xOffset = startX + (i * _laneWidth);
+
+                Vector3 startPos = center + rot * new Vector3(xOffset, 0, -_rowsCount * _cellLength);
+                Vector3 endPos = center + rot * new Vector3(xOffset, 0, _zombieSpawnDistance);
+
+                Gizmos.DrawLine(startPos, endPos);
+            }
+
+            Gizmos.color = Color.yellow;
+            for (int r = 0; r <= _rowsCount; r++)
+            {
+                float zOffset = -(r * _cellLength);
+
+                Vector3 leftSide = center + rot * new Vector3(startX, 0, zOffset);
+                Vector3 rightSide = center + rot * new Vector3(startX + totalWidth, 0, zOffset);
+
+                Gizmos.DrawLine(leftSide, rightSide);
+            }
+
+            Gizmos.color = Color.red;
+            for (int i = 0; i < _laneCount; i++)
+            {
+                float centerX = startX + (i * _laneWidth) + (_laneWidth / 2f);
+                Vector3 spawnPos = center + rot * new Vector3(centerX, 0, _zombieSpawnDistance);
+                Gizmos.DrawWireSphere(spawnPos, 0.5f);
+            }
+
         }
     }
 }
@@ -1093,27 +1300,41 @@ timeCreated: 1769447146
 // ===== Features/Enemy/ZombieController.cs =====
 ﻿using System;
 using Core.Interfaces;
+using Data.Configs;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Audio;
 using UnityEngine;
+using Zenject;
 
 namespace Features.Enemy
 {
+    /// <summary>
+    /// Controls zombie behavior, movement, health, effects and audio on spawn/death.
+    /// </summary>
     [RequireComponent(typeof(CharacterController))]
     [RequireComponent(typeof(ZombieAnimation))]
     public class ZombieController : MonoBehaviour, IDamageable
     {
-        [SerializeField] private float _maxHealth = 100f;
-        [SerializeField] private float _moveSpeed = 1.5f;
-
-        public event Action OnDeath;
-        public event Action<float> OnHealthChanged;
-
         private ZombieAnimation _animation;
+        private CharacterController _characterController;
+        private IGameObjectFactory _factory;
+        private IAudioService _audioService;
+        private EnemyData _data;
+        
         private float _currentHealth;
         private bool _isAlive;
-        private CharacterController _characterController;
         private Vector3 _moveDirection = Vector3.back; 
 
         public bool IsAlive => _isAlive;
+        public event Action OnDeath;
+        public event Action<float> OnHealthChanged;
+
+        [Inject]
+        public void Construct(IGameObjectFactory factory, IAudioService audioService)
+        {
+            _factory = factory;
+            _audioService = audioService;
+        }
 
         private void Awake()
         {
@@ -1121,10 +1342,22 @@ namespace Features.Enemy
             _characterController = GetComponent<CharacterController>();
         }
 
-        public void Initialize()
+        public async void Initialize(EnemyData data)
         {
+            _data = data;
+            _currentHealth = _data.maxHealth;
             _isAlive = true;
             _animation.PlayWalk();
+            
+            if (_data.spawnEffect != null && _data.spawnEffect.RuntimeKey != null)
+            {
+                await _factory.InstantiateAsync(_data.spawnEffect, transform.position, Quaternion.identity);
+            }
+
+            if (_data.spawnSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_data.spawnSound, transform.position, _audioService.SfxVolume);
+            }
         }
 
         private void Update()
@@ -1155,7 +1388,7 @@ namespace Features.Enemy
 
         private void Move()
         {
-            _characterController.Move(_moveDirection * _moveSpeed * Time.deltaTime);
+            _characterController.Move(_moveDirection * _data.moveSpeed * Time.deltaTime);
         }
 
         private void Die()
@@ -1163,6 +1396,11 @@ namespace Features.Enemy
             _isAlive = false;
             _animation.PlayDeath();
             OnDeath?.Invoke();
+
+            if (_data.deathSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_data.deathSound, transform.position, _audioService.SfxVolume);
+            }
             
             _characterController.enabled = false;
             Destroy(gameObject, 5f); 
@@ -1185,6 +1423,7 @@ timeCreated: 1769440039
 using Core.Interfaces;
 using Data.Configs;
 using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
@@ -1193,6 +1432,9 @@ using Random = UnityEngine.Random;
 
 namespace Features.Plants
 {
+    /// <summary>
+    /// Controls the Cannon plant, including aiming, firing, and playing fire sounds.
+    /// </summary>
     public class CannonController : MonoBehaviour, IPossessablePlant
     {
         [Header("References")]
@@ -1209,6 +1451,7 @@ namespace Features.Plants
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
+        private IAudioService _audioService;
         private PlantData _config;
         
         private bool _isPossessed;
@@ -1218,10 +1461,11 @@ namespace Features.Plants
         private float _lastFireTime = -999f;
 
         [Inject]
-        public void Construct(IInputService inputService, IGameObjectFactory factory)
+        public void Construct(IInputService inputService, IGameObjectFactory factory, IAudioService audioService)
         {
             _inputService = inputService;
             _factory = factory;
+            _audioService = audioService;
         }
 
         public void Initialize(PlantData config)
@@ -1317,6 +1561,11 @@ namespace Features.Plants
             _lastFireTime = Time.time;
             OnFireSuccess?.Invoke();
 
+            if (_config.fireSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_config.fireSound, _muzzle.position, _audioService.SfxVolume);
+            }
+
             float currentMass = Random.Range(_config.projectileMass * 0.95f, _config.projectileMass * 1.05f);
 
             var projectileObj = await _factory.InstantiateAsync(_config.projectileAsset, _muzzle.position, Quaternion.identity);
@@ -1326,7 +1575,7 @@ namespace Features.Plants
             {
                 Vector3 startVel = _muzzle.forward * _config.initialSpeed;
                 physicsComp.Initialize(currentMass, _config.projectileRadius, _config.dragCoeff, 
-                    _config.airDensity, _config.wind, startVel, _config.damage);
+                    _config.airDensity, _config.wind, startVel, _config.damage, _config);
             }
         }
     }
@@ -1342,6 +1591,7 @@ timeCreated: 1769440048
 using Core.Interfaces;
 using Data.Configs;
 using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Input;
 using Physics;
 using UnityEngine;
@@ -1350,6 +1600,9 @@ using Random = UnityEngine.Random;
 
 namespace Features.Plants
 {
+    /// <summary>
+    /// Controls the Peashooter plant, including aiming, firing, and playing fire sounds.
+    /// </summary>
     public class PeashooterController : MonoBehaviour, IPossessablePlant
     {
         [Header("References")]
@@ -1365,6 +1618,7 @@ namespace Features.Plants
 
         private IInputService _inputService;
         private IGameObjectFactory _factory;
+        private IAudioService _audioService;
         private PlantData _config;
 
         private bool _isPossessed;
@@ -1373,10 +1627,11 @@ namespace Features.Plants
         private float _lastFireTime = -999f;
 
         [Inject]
-        public void Construct(IInputService inputService, IGameObjectFactory factory)
+        public void Construct(IInputService inputService, IGameObjectFactory factory, IAudioService audioService)
         {
             _inputService = inputService;
             _factory = factory;
+            _audioService = audioService;
         }
 
         public void Initialize(PlantData config)
@@ -1472,6 +1727,11 @@ namespace Features.Plants
             _lastFireTime = Time.time;
             OnFireSuccess?.Invoke();
 
+            if (_config.fireSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_config.fireSound, _muzzle.position, _audioService.SfxVolume);
+            }
+
             float currentMass = Random.Range(_config.projectileMass * 0.98f, _config.projectileMass * 1.02f);
 
             var projectileObj = await _factory.InstantiateAsync(_config.projectileAsset, _visualizer.transform.position, Quaternion.identity);
@@ -1481,7 +1741,7 @@ namespace Features.Plants
             {
                 Vector3 startVel = _muzzle.forward * _config.initialSpeed;
                 physicsComp.Initialize(currentMass, _config.projectileRadius, _config.dragCoeff,
-                    _config.airDensity, _config.wind, startVel, _config.damage);
+                    _config.airDensity, _config.wind, startVel, _config.damage, _config);
             }
         }
     }
@@ -1838,11 +2098,11 @@ timeCreated: 1769447221
 // ===== Infrastructure/Factories/Enemies/EnemyFactory.cs =====
 ﻿using System;
 using Cysharp.Threading.Tasks;
+using Data.Configs;
 using Features.Enemy;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.Context;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 
 namespace Infrastructure.Factories.Enemies
 {
@@ -1859,12 +2119,12 @@ namespace Infrastructure.Factories.Enemies
             _levelProvider = levelProvider;
         }
 
-        public async UniTask<ZombieController> CreateZombie(AssetReference assetRef, Vector3 position)
+        public async UniTask<ZombieController> CreateZombie(EnemyData data, Vector3 position)
         {
-            GameObject obj = await _gameObjectFactory.InstantiateAsync(assetRef, position, Quaternion.LookRotation(Vector3.back));
+            GameObject obj = await _gameObjectFactory.InstantiateAsync(data.prefabReference, position, Quaternion.LookRotation(Vector3.back));
             
             var zombie = obj.GetComponent<ZombieController>();
-            zombie.Initialize();
+            zombie.Initialize(data);
             
             _levelProvider.CurrentLevel.RegisterEnemy(zombie);
             
@@ -1888,16 +2148,15 @@ timeCreated: 1769447251
 // ===== Infrastructure/Factories/Enemies/IEnemyFactory.cs =====
 ﻿using System;
 using Cysharp.Threading.Tasks;
+using Data.Configs;
 using Features.Enemy;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
 
 namespace Infrastructure.Factories.Enemies
 {
     public interface IEnemyFactory
     {
-        UniTask<ZombieController> CreateZombie(AssetReference assetRef, Vector3 position);
-        
+        UniTask<ZombieController> CreateZombie(EnemyData data, Vector3 position);
         event Action<ZombieController> OnZombieCreated;
     }
 }
@@ -2226,7 +2485,7 @@ using Infrastructure.Services.FPS;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
 using Infrastructure.Services.Lanes;
-using Infrastructure.Services.Physics;
+using Infrastructure.Services.PhysicsCalculation;
 using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.UI;
@@ -2522,6 +2781,7 @@ namespace Infrastructure.Providers.StaticData
         LevelData GetLevelData(); 
         List<PlantData> GetAllPlants();
         List<EnemyData> GetAllEnemies();
+        GameConfig GetGameConfig();
     }
 }
 
@@ -2545,20 +2805,23 @@ namespace Infrastructure.Providers.StaticData
         private Dictionary<PlantType, PlantData> _plants;
         private Dictionary<EnemyType, EnemyData> _enemies;
         private LevelData _levelData;
+        private GameConfig _gameConfig;
 
         public void Load()
         {
-            _plants = Resources.LoadAll<PlantData>(ConfigsPath.PLANTS_PATH)
+            _plants = Resources.LoadAll<PlantData>(ConfigPaths.PLANTS_PATH)
                 .ToDictionary(x => x.type, x => x);
 
-            _enemies = Resources.LoadAll<EnemyData>(ConfigsPath.ENEMIES_PATH)
+            _enemies = Resources.LoadAll<EnemyData>(ConfigPaths.ENEMIES_PATH)
                 .ToDictionary(x => x.type, x => x);
 
-            var levels = Resources.LoadAll<LevelData>(ConfigsPath.LEVEL_PATH);
+            var levels = Resources.LoadAll<LevelData>(ConfigPaths.LEVEL_PATH);
             if (levels.Length > 0)
                 _levelData = levels[0];
             else
                 Debug.LogError("[StaticDataProvider] No LevelConfig found!");
+            
+            _gameConfig = Resources.Load<GameConfig>(ConfigPaths.GAME_CONFIG_PATH);
 
             Debug.Log($"[StaticDataProvider] Loaded {_plants.Count} plants, {_enemies.Count} enemies.");
         }
@@ -2573,6 +2836,8 @@ namespace Infrastructure.Providers.StaticData
 
         public List<PlantData> GetAllPlants() => _plants.Values.ToList();
         public List<EnemyData> GetAllEnemies() => _enemies.Values.ToList();
+        
+        public GameConfig GetGameConfig() => _gameConfig;
     }
 }
 
@@ -2603,12 +2868,15 @@ timeCreated: 1769539188
 namespace Infrastructure.Services.Audio
 {
     /// <summary>
-    /// Manages global audio settings and volume control.
+    /// Manages global audio, volume control, and background music persistence.
     /// </summary>
     public class AudioService : IAudioService
     {
         private const string MUSIC_KEY = "MusicVolume";
         private const string SFX_KEY = "SfxVolume";
+
+        private AudioSource _musicSource;
+        private GameObject _musicObject;
 
         public float MasterVolume => AudioListener.volume;
         public float MusicVolume { get; private set; }
@@ -2618,6 +2886,20 @@ namespace Infrastructure.Services.Audio
         {
             MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 1f);
             SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 1f);
+            
+            InitializeMusicSource();
+        }
+
+        private void InitializeMusicSource()
+        {
+            if (_musicObject == null)
+            {
+                _musicObject = new GameObject("MusicSource_Global");
+                Object.DontDestroyOnLoad(_musicObject);
+                _musicSource = _musicObject.AddComponent<AudioSource>();
+                _musicSource.loop = true;
+                _musicSource.volume = MusicVolume;
+            }
         }
 
         public void SetMasterVolume(float value)
@@ -2628,6 +2910,10 @@ namespace Infrastructure.Services.Audio
         public void SetMusicVolume(float value)
         {
             MusicVolume = Mathf.Clamp01(value);
+            if (_musicSource != null)
+            {
+                _musicSource.volume = MusicVolume;
+            }
             PlayerPrefs.SetFloat(MUSIC_KEY, MusicVolume);
             PlayerPrefs.Save();
         }
@@ -2637,6 +2923,15 @@ namespace Infrastructure.Services.Audio
             SfxVolume = Mathf.Clamp01(value);
             PlayerPrefs.SetFloat(SFX_KEY, SfxVolume);
             PlayerPrefs.Save();
+        }
+
+        public void PlayMusic(AudioClip clip)
+        {
+            if (clip == null || (_musicSource.clip == clip && _musicSource.isPlaying)) return;
+
+            _musicSource.clip = clip;
+            _musicSource.volume = MusicVolume;
+            _musicSource.Play();
         }
     }
 }
@@ -2648,6 +2943,7 @@ timeCreated: 1769539213
 
 // ===== Infrastructure/Services/Audio/IAudioService.cs =====
 ﻿using System;
+using UnityEngine;
 
 namespace Infrastructure.Services.Audio
 {
@@ -2660,6 +2956,7 @@ namespace Infrastructure.Services.Audio
         void SetMasterVolume(float value);
         void SetMusicVolume(float value);
         void SetSfxVolume(float value);
+        void PlayMusic(AudioClip clip);
     }
 }
 
@@ -3256,7 +3553,7 @@ timeCreated: 1769440277
 // ===== Infrastructure/Services/PhysicsCalculation/AerodynamicsCalculationService.cs =====
 ﻿using UnityEngine;
 
-namespace Infrastructure.Services.Physics
+namespace Infrastructure.Services.PhysicsCalculation
 {
     /// <summary>
     /// Provides physics calculations for quadratic drag and aerodynamics.
@@ -3299,7 +3596,7 @@ timeCreated: 1769440290
 // ===== Infrastructure/Services/PhysicsCalculation/IAerodynamicsCalculationService.cs =====
 ﻿using UnityEngine;
 
-namespace Infrastructure.Services.Physics
+namespace Infrastructure.Services.PhysicsCalculation
 {
     public interface IAerodynamicsCalculationService
     {
@@ -3345,12 +3642,14 @@ timeCreated: 1769527139
 // ===== Infrastructure/Services/Planting/IPlantingService.cs =====
 ﻿using System;
 using Data.Enums;
+using UnityEngine;
 
 namespace Infrastructure.Services.Planting
 {
     public interface IPlantingService
     {
         event Action<PlantType> OnPlantSelected;
+        event Action<Vector3> OnPlantingSuccess;
         void SelectPlant(PlantType type);
         void TryPlantAtCursor();
         void ClearSelection();
@@ -3431,6 +3730,7 @@ using Features.Visuals;
 using Infrastructure.Factories.Objects;
 using Infrastructure.Providers.Context;
 using Infrastructure.Providers.StaticData;
+using Infrastructure.Services.Audio;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.Grid;
 using Infrastructure.Services.Input;
@@ -3439,9 +3739,13 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
+    /// <summary>
+    /// Manages the planting logic, including checking costs, grid occupation, and playing planting sounds.
+    /// </summary>
     public class PlantingService : IPlantingService, IDisposable, ITickable
     {
         public event Action<PlantType> OnPlantSelected;
+        public event Action<Vector3> OnPlantingSuccess;
 
         private readonly IInputService _inputService;
         private readonly IGridService _gridService;
@@ -3450,6 +3754,7 @@ namespace Infrastructure.Services.Planting
         private readonly IStaticDataProvider _staticData;
         private readonly ILevelProvider _levelProvider;
         private readonly IPlantTrackerService _plantTracker;
+        private readonly IAudioService _audioService;
 
         private PlantType _selectedPlantType = PlantType.None;
         private GridVisualizer _visualizer;
@@ -3461,7 +3766,8 @@ namespace Infrastructure.Services.Planting
             IGameObjectFactory factory,
             IStaticDataProvider staticData,
             ILevelProvider levelProvider,
-            IPlantTrackerService plantTracker)
+            IPlantTrackerService plantTracker,
+            IAudioService audioService)
         {
             _inputService = inputService;
             _gridService = gridService;
@@ -3470,6 +3776,7 @@ namespace Infrastructure.Services.Planting
             _staticData = staticData;
             _levelProvider = levelProvider;
             _plantTracker = plantTracker;
+            _audioService = audioService;
         }
 
         public void Initialize()
@@ -3585,8 +3892,15 @@ namespace Infrastructure.Services.Planting
                         {
                             sunflower.Initialize(plantData);
                         }
+                        
+                        if (plantData.plantSound != null)
+                        {
+                            AudioSource.PlayClipAtPoint(plantData.plantSound, buildPos, _audioService.SfxVolume);
+                        }
 
                         _gridService.TryOccupyCell(lane, row, plantObj);
+                        
+                        OnPlantingSuccess?.Invoke(buildPos);
                         
                         _visualizer.ShowStaticGrid(_levelProvider, _gridService);
                         ClearSelection(); 
@@ -3734,7 +4048,20 @@ namespace Infrastructure.Services.UI
                 Debug.LogError($"[WindowService] Path not found for ID: {windowID}");
                 return;
             }
-            await _uiFactory.CreateScreen(path, windowID);
+            
+            var windowObj = await _uiFactory.CreateScreen(path, windowID);
+            
+            if (windowID == WindowID.Loading && windowObj != null)
+            {
+                windowObj.transform.SetParent(null);
+                Object.DontDestroyOnLoad(windowObj);
+
+                var canvas = windowObj.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.sortingOrder = 999; 
+                }
+            }
         }
 
         public async Task<T> OpenAndGet<T>(WindowID windowID) where T : Component
@@ -3753,6 +4080,7 @@ namespace Infrastructure.Services.UI
             WindowID.Loading => UIPaths.LOADING_SCREEN,
             WindowID.MainMenu => UIPaths.MAIN_MENU,
             WindowID.HUD => UIPaths.HUD,
+            WindowID.Settings => UIPaths.SETTINGS,
             _ => null
         };
     }
@@ -3777,6 +4105,7 @@ namespace Infrastructure.Services.Waves
     {
         void StartLevel();
         event Action<int> OnWaveStarted;
+        event Action OnLevelCompleted;
         void StopLevel();
     }
 }
@@ -3815,6 +4144,7 @@ namespace Infrastructure.Services.Waves
         private int _spawnedInGroupCount;
 
         public event System.Action<int> OnWaveStarted;
+        public event System.Action OnLevelCompleted;
 
         public WaveService(
             IEnemyFactory enemyFactory, 
@@ -3833,7 +4163,7 @@ namespace Infrastructure.Services.Waves
             _levelConfig = _staticData.GetLevelData();
             if (_levelConfig == null || _levelConfig.waves.Count == 0)
             {
-                Debug.LogError("[WaveService] No Level Config found!");
+                OnLevelCompleted?.Invoke();
                 return;
             }
 
@@ -3874,7 +4204,7 @@ namespace Infrastructure.Services.Waves
             int randomLane = UnityEngine.Random.Range(0, _laneService.LaneCount);
             Vector3 spawnPos = _laneService.GetSpawnPosition(randomLane);
 
-            var zombie = await _enemyFactory.CreateZombie(enemyData.prefabReference, spawnPos);
+            var zombie = await _enemyFactory.CreateZombie(enemyData, spawnPos);
             
             zombie.OnDeath += () => _economyService.AddSun(enemyData.killReward);
         }
@@ -3887,7 +4217,10 @@ namespace Infrastructure.Services.Waves
                 if (_currentWaveIndex < _levelConfig.waves.Count)
                     _stateTimer = _levelConfig.waves[_currentWaveIndex].startDelay;
                 else
+                {
                     _isRunning = false;
+                    OnLevelCompleted?.Invoke(); // Уровень пройден (волны кончились)
+                }
                 return;
             }
             _activeGroup = _currentGroupsQueue.Dequeue();
@@ -3900,6 +4233,7 @@ namespace Infrastructure.Services.Waves
             if (index >= _levelConfig.waves.Count)
             {
                 _isRunning = false;
+                OnLevelCompleted?.Invoke();
                 return;
             }
             var waveInfo = _levelConfig.waves[index];
@@ -3935,14 +4269,17 @@ DefaultImporter:
 
 // ===== Physics/PhysicsProjectile.cs =====
 ﻿using Core.Interfaces;
-using Infrastructure.Services.Physics;
+using Data.Configs;
+using Infrastructure.Factories.Objects;
+using Infrastructure.Services.Audio;
+using Infrastructure.Services.PhysicsCalculation;
 using UnityEngine;
 using Zenject;
 
 namespace Physics
 {
     /// <summary>
-    /// Applies quadratic drag forces and deals damage on impact.
+    /// Handles projectile physics, collision detection, damage dealing, visual effects and impact sounds.
     /// </summary>
     [RequireComponent(typeof(Rigidbody))]
     [RequireComponent(typeof(SphereCollider))]
@@ -3950,6 +4287,8 @@ namespace Physics
     {
         private Rigidbody _rb;
         private IAerodynamicsCalculationService _calculator;
+        private IGameObjectFactory _factory;
+        private IAudioService _audioService;
         
         private float _mass;
         private float _radius;
@@ -3959,11 +4298,14 @@ namespace Physics
         private float _area;
         private float _damage;
         private bool _isLaunched;
+        private PlantData _config;
 
         [Inject]
-        public void Construct(IAerodynamicsCalculationService calculator)
+        public void Construct(IAerodynamicsCalculationService calculator, IGameObjectFactory factory, IAudioService audioService)
         {
             _calculator = calculator;
+            _factory = factory;
+            _audioService = audioService;
         }
 
         private void Awake()
@@ -3971,7 +4313,7 @@ namespace Physics
             _rb = GetComponent<Rigidbody>();
         }
 
-        public void Initialize(float mass, float radius, float dragCoeff, float airDensity, Vector3 wind, Vector3 initialVelocity, float damage)
+        public void Initialize(float mass, float radius, float dragCoeff, float airDensity, Vector3 wind, Vector3 initialVelocity, float damage, PlantData config)
         {
             _mass = Mathf.Max(0.001f, mass);
             _radius = Mathf.Max(0.001f, radius);
@@ -3979,6 +4321,7 @@ namespace Physics
             _airDensity = Mathf.Max(0f, airDensity);
             _wind = wind;
             _damage = damage;
+            _config = config;
             
             _area = _calculator.CalculateCrossSectionArea(_radius);
             
@@ -3998,16 +4341,26 @@ namespace Physics
             _rb.AddForce(dragForce, ForceMode.Force);
         }
 
-        private void OnCollisionEnter(Collision other)
+        private async void OnCollisionEnter(Collision other)
         {
-            var damageable = other.gameObject.GetComponent<IDamageable>();
+            // if (_config.impactEffect != null)
+            // {
+            //     await _factory.InstantiateAsync(_config.impactEffect, other.contacts[0].point, Quaternion.identity);
+            // }
+
+            if (_config.hitSound != null)
+            {
+                AudioSource.PlayClipAtPoint(_config.hitSound, transform.position, _audioService.SfxVolume);
+            }
+
+            var damageable = other.gameObject.GetComponent<IDamageable>() ?? 
+                             other.gameObject.GetComponentInParent<IDamageable>();
+
             if (damageable != null && damageable.IsAlive)
             {
                 damageable.TakeDamage(_damage);
             }
 
-            else if (other.gameObject.layer != LayerMask.NameToLayer("Ground")) return;
-            
             Destroy(gameObject);
         }
     }
@@ -4019,7 +4372,7 @@ guid: cbbb0a8947694f989cb6b1550bba2815
 timeCreated: 1769440357
 
 // ===== Physics/TrajectoryVisualizer.cs =====
-﻿using Infrastructure.Services.Physics;
+﻿using Infrastructure.Services.PhysicsCalculation;
 using UnityEngine;
 using Zenject;
 
@@ -4184,10 +4537,13 @@ timeCreated: 1769527293
 using System.Collections.Generic;
 using Core.Interfaces;
 using Data.Configs;
+using Data.Enums;
+using DG.Tweening;
 using Features.Plants;
 using Infrastructure.Providers.StaticData;
 using Infrastructure.Services.Economy;
 using Infrastructure.Services.FPS;
+using Infrastructure.Services.Input;
 using Infrastructure.Services.Planting;
 using TMPro;
 using UnityEngine;
@@ -4202,10 +4558,24 @@ namespace UI.HUD
         [SerializeField] private TextMeshProUGUI _fpsText;
         [SerializeField] private TextMeshProUGUI _sunText;
         
+        [Header("Controls")]
+        [SerializeField] private Button _settingsButton;
+        [SerializeField] private Button _exitToMenuButton;
+        
         [Header("Planting UI")]
         [SerializeField] private Transform _cardsContainer;
         [SerializeField] private PlantCard _cardPrefab;
         [SerializeField] private GameObject _gameplayPanel;
+        [SerializeField] private Image _plantingGhostImage; 
+
+        [Header("Tutorial UI")]
+        [SerializeField] private GameObject _dimmedPanel; 
+        [SerializeField] private RectTransform _tutorialArrow;
+        [SerializeField] private RectTransform _tutorialOrigin1;
+        [SerializeField] private RectTransform _tutorialOrigin2;
+        
+        [SerializeField] private float _arrowAnimDuration = 0.6f;
+        [SerializeField] private float _arrowWorldYOffset = 50f;
 
         [Header("Action Mode UI")]
         [SerializeField] private GameObject _actionPanel;
@@ -4218,16 +4588,15 @@ namespace UI.HUD
         
         [Header("Game Over UI")]
         [SerializeField] private GameObject _gameOverPanel;
+        [SerializeField] private TextMeshProUGUI _gameOverTitle; 
         [SerializeField] private Button _restartButton;
         [SerializeField] private Button _menuButton;
         
         [Header("Battle Controls")]
         [SerializeField] private Button _startBattleButton;
 
-
         [Header("Text Config")]
         [SerializeField] private string _textReady = "СНАРЯД ГОТОВ";
-
         [SerializeField] private string _textReloading = "ПЕРЕЗАРЯДКА...";
         [SerializeField] private string _textNotReadyWarning = "Снаряд ещё не готов";
         [SerializeField] private Color _colorReady = Color.green;
@@ -4238,12 +4607,17 @@ namespace UI.HUD
         private IStaticDataProvider _staticData;
         private IPlantingService _plantingService;
         private IPlantTrackerService _plantTracker;
+        private IInputService _inputService;
         private DiContainer _container;
 
         private readonly List<PlantCard> _cards = new();
         private float _lastUpdateTimer;
         private IPossessablePlant _activePlant;
         private float _warningTimer;
+
+        private bool _isArrowTrackingWorld;
+        private Transform _worldTrackingTarget;
+        private Tween _arrowTween;
 
         [Inject]
         public void Construct(
@@ -4252,6 +4626,7 @@ namespace UI.HUD
             IStaticDataProvider staticData,
             IPlantingService plantingService,
             IPlantTrackerService plantTracker,
+            IInputService inputService,
             DiContainer container)
         {
             _fpsService = fpsService;
@@ -4259,6 +4634,7 @@ namespace UI.HUD
             _staticData = staticData;
             _plantingService = plantingService;
             _plantTracker = plantTracker;
+            _inputService = inputService;
             _container = container;
         }
 
@@ -4282,19 +4658,146 @@ namespace UI.HUD
             _economyService.OnSunChanged -= UpdateSunDisplay;
             _plantingService.OnPlantSelected -= HandlePlantSelected;
             if (_plantTracker != null) _plantTracker.OnListChanged -= RebuildActivePlantsList;
+            
+            _arrowTween?.Kill();
             UnsubscribeActivePlant();
         }
+
+        public void SetDimmed(bool isActive)
+        {
+            if (_dimmedPanel != null)
+                _dimmedPanel.SetActive(isActive);
+        }
+
+        public void ShowTutorialStep1_Selection()
+        {
+            if (_tutorialOrigin1 == null) return;
+            
+            SetupArrow();
+            _isArrowTrackingWorld = false;
+
+            _tutorialArrow.position = _tutorialOrigin1.position;
+            _tutorialArrow.rotation = Quaternion.Euler(0, 0, 0);
+
+            float startX = _tutorialArrow.position.x;
+            _arrowTween = _tutorialArrow.DOMoveX(startX + 20f, _arrowAnimDuration)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetEase(Ease.InOutSine);
+        }
+
+        public void ShowTutorialStep2_Placement()
+        {
+            if (_tutorialOrigin2 == null) return;
+
+            SetupArrow();
+            _isArrowTrackingWorld = false;
+
+            _tutorialArrow.position = _tutorialOrigin2.position;
+            _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
+
+            float startY = _tutorialArrow.position.y;
+            _arrowTween = _tutorialArrow.DOMoveY(startY - 20f, _arrowAnimDuration)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetEase(Ease.InOutSine);
+        }
+
+        public void ShowTutorialStep3_Possession(Transform target)
+        {
+            SetupArrow();
+            _isArrowTrackingWorld = true;
+            _worldTrackingTarget = target;
+            
+            _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
+
+            // Анимация пульсации
+            _arrowTween = _tutorialArrow.DOScale(1.2f, _arrowAnimDuration)
+                .SetLoops(-1, LoopType.Yoyo);
+        }
+
+        public void HideTutorialArrow()
+        {
+            if (_tutorialArrow != null)
+            {
+                _arrowTween?.Kill();
+                _tutorialArrow.gameObject.SetActive(false);
+            }
+            _isArrowTrackingWorld = false;
+            _worldTrackingTarget = null;
+        }
+
+        public void SetGhost(Sprite sprite)
+        {
+            if (_plantingGhostImage == null) return;
+
+            if (sprite != null)
+            {
+                _plantingGhostImage.sprite = sprite;
+                _plantingGhostImage.gameObject.SetActive(true);
+            }
+            else
+            {
+                _plantingGhostImage.gameObject.SetActive(false);
+            }
+        }
+
+        private void SetupArrow()
+        {
+            if (_tutorialArrow == null) return;
+            _tutorialArrow.gameObject.SetActive(true);
+            _arrowTween?.Kill();
+            _tutorialArrow.localScale = Vector3.one;
+        }
+
+        private void Update()
+        {
+            UpdateFPS();
+            UpdateCardsAvailability();
+            UpdatePlantUI();
+            
+            if (_plantingGhostImage.gameObject.activeSelf)
+            {
+                _plantingGhostImage.transform.position = _inputService.GetPointerPosition();
+            }
+
+            if (_isArrowTrackingWorld && _tutorialArrow.gameObject.activeSelf && _worldTrackingTarget != null)
+            {
+                Vector3 screenPos = Camera.main.WorldToScreenPoint(_worldTrackingTarget.position);
+                
+                // Если Z < 0, объект сзади камеры
+                if (screenPos.z < 0) 
+                {
+                    _tutorialArrow.gameObject.SetActive(false);
+                }
+                else
+                {
+                    if (!_tutorialArrow.gameObject.activeSelf) 
+                        _tutorialArrow.gameObject.SetActive(true);
+
+                    screenPos.z = 0;
+
+                    _tutorialArrow.GetComponentInChildren<RectTransform>().position = new Vector3(0, _arrowWorldYOffset, 0);
+                }
+            }
+        }
         
-        public void BindButtons(Action onRestart, Action onMenu, Action onStartBattle) // Updated signature
+        public void BindButtons(Action onRestart, Action onMenu, Action onStartBattle, Action onSettings)
         {
             _restartButton.onClick.AddListener(() => onRestart?.Invoke());
             _menuButton.onClick.AddListener(() => onMenu?.Invoke());
+            _exitToMenuButton.onClick.AddListener(() => onMenu?.Invoke());
+            _settingsButton.onClick.AddListener(() => onSettings?.Invoke());
             _startBattleButton.onClick.AddListener(() => onStartBattle?.Invoke());
         }
 
-        public void ShowGameOverPanel()
+        public void ShowGameOverPanel(bool isVictory)
         {
             _gameOverPanel.SetActive(true);
+            _gameOverTitle.text = isVictory ? "VICTORY!" : "GAME OVER";
+            _settingsButton.gameObject.SetActive(false);
+            _exitToMenuButton.gameObject.SetActive(false);
+            HideTutorialArrow();
+            SetGhost(null);
+            SetDimmed(false);
         }
 
         public void SetActivePlant(IPossessablePlant plant)
@@ -4328,13 +4831,6 @@ namespace UI.HUD
             _cooldownStatusText.text = _textNotReadyWarning;
             _cooldownStatusText.color = _colorNotReady;
             _warningTimer = 1.0f;
-        }
-
-        private void Update()
-        {
-            UpdateFPS();
-            UpdateCardsAvailability();
-            UpdatePlantUI();
         }
 
         private void UpdatePlantUI()
@@ -4402,16 +4898,16 @@ namespace UI.HUD
                 var plant = plants[i];
                 var view = _container.
                     InstantiatePrefabForComponent<ActivePlantView>(_activePlantPrefab, _activePlantsContainer);
-                Data.Enums.PlantType type = Data.Enums.PlantType.None;
-                if (plant is CannonController) type = Data.Enums.PlantType.CoconutCannon;
-                else if (plant is PeashooterController) type = Data.Enums.PlantType.Peashooter;
+                PlantType type = PlantType.None;
+                if (plant is CannonController) type = PlantType.CoconutCannon;
+                else if (plant is PeashooterController) type = PlantType.Peashooter;
                 view.Initialize(plant, i, type);
                 view.SetSelected(_activePlant == plant);
             }
         }
 
         private void OnCardClicked(PlantData data) => _plantingService.SelectPlant(data.type);
-        private void HandlePlantSelected(Data.Enums.PlantType type) { }
+        private void HandlePlantSelected(PlantType type) { }
         private void UpdateSunDisplay(int amount) => _sunText.text = $"{amount}";
 
         public void SetGameplayVisibility(bool isVisible) => _gameplayPanel.SetActive(isVisible);
@@ -4507,12 +5003,13 @@ using Zenject;
 namespace UI.MainMenu
 {
     /// <summary>
-    /// Controls the main menu interaction logic.
+    /// Controls main menu interactions: Start, Settings, Exit.
     /// </summary>
     public class MainMenuWindow : MonoBehaviour
     {
         [SerializeField] private Button _startButton;
         [SerializeField] private Button _settingsButton;
+        [SerializeField] private Button _exitButton;
 
         private StateMachine _stateMachine;
         private IWindowService _windowService;
@@ -4528,12 +5025,14 @@ namespace UI.MainMenu
         {
             _startButton.onClick.AddListener(OnStartClicked);
             _settingsButton.onClick.AddListener(OnSettingsClicked);
+            _exitButton.onClick.AddListener(OnExitClicked);
         }
 
         private void OnDestroy()
         {
             _startButton.onClick.RemoveListener(OnStartClicked);
             _settingsButton.onClick.RemoveListener(OnSettingsClicked);
+            _exitButton.onClick.RemoveListener(OnExitClicked);
         }
 
         private void OnStartClicked()
@@ -4544,6 +5043,14 @@ namespace UI.MainMenu
         private void OnSettingsClicked()
         {
             _windowService.Open(WindowID.Settings);
+        }
+
+        private void OnExitClicked()
+        {
+            Application.Quit();
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#endif
         }
     }
 }

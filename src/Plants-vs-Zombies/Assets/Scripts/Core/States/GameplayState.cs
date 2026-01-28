@@ -1,9 +1,9 @@
-﻿// ... imports ...
-using UI.HUD;
-using UnityEngine;
+﻿using System.Linq;
+using Cysharp.Threading.Tasks; // Для UniTask если понадобится
 using Core.BaseStates;
 using Core.Interfaces;
 using Data.Enums;
+using Data.Path;
 using Features.Enemy;
 using Features.Plants;
 using Infrastructure.Providers.Context;
@@ -18,12 +18,14 @@ using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
+using UI.HUD;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
     public class GameplayState : IState, IEnterable, IExitable
     {
-        // ... (dependencies) ...
         private readonly StateMachine _stateMachine;
         private readonly IWindowService _windowService;
         private readonly IInputService _inputService;
@@ -85,14 +87,11 @@ namespace Core.States
         {
             _isGameOver = false;
             _isBattleStarted = false; 
-            
-            // Сброс
             _isTutorialComplete = false;
             _tutorialStep = 0;
             
             _hudWindow = await _windowService.OpenAndGet<HudWindow>(WindowID.HUD);
             _hudWindow.BindButtons(OnRestartClicked, OnMenuClicked, StartBattle, OnSettingsClicked);
-            
             _hudWindow.SetStartButtonVisible(false);
             
             _inputService.Enable();
@@ -116,11 +115,12 @@ namespace Core.States
             var levelData = _staticData.GetLevelData();
             if (levelData != null && levelData.levelMusic != null)
             {
+                _audioService.InitializeMusicSource();
                 _audioService.PlayMusic(levelData.levelMusic);
             }
-
+            
             _windowService.Close(WindowID.Loading);
-
+            
             StartTutorial();
         }
 
@@ -135,18 +135,15 @@ namespace Core.States
         {
             if (_isTutorialComplete) return;
 
-            // Шаг 2: Игрок выбрал растение. Убираем затемнение, показываем стрелку на Origin2
+            // Шаг 2: Выбрано растение. Стрелка на Origin2 (Grid).
             if (type != PlantType.None && _tutorialStep == 0)
             {
                 _tutorialStep = 1;
+                _hudWindow.SetDimmed(false); 
                 
-                _hudWindow.SetDimmed(false); // Выключаем Dimmed
-                
-                // Включаем призрака
                 var data = _staticData.GetPlantData(type);
                 if (data != null) _hudWindow.SetGhost(data.icon);
                 
-                // Показываем стрелку на Origin2
                 _hudWindow.ShowTutorialStep2_Placement();
             }
             else if (type == PlantType.None)
@@ -159,22 +156,20 @@ namespace Core.States
         {
             if (_isTutorialComplete) return;
             
-            // Шаг 3: Растение посажено. Стрелка указывает на него в мире.
+            // Шаг 3: Растение посажено. Стрелка ВСЕ ЕЩЕ на Origin2.
+            // Но мы подсвечиваем клетку, куда нужно нажать.
             if (_tutorialStep == 1)
             {
                 _tutorialStep = 2;
                 _hudWindow.SetGhost(null);
                 
-                // Находим объект растения
+                // Стрелка остается на Origin2 (по запросу)
+                _hudWindow.ShowTutorialStep3_Possession();
+
                 if (_gridService.WorldToGrid(pos, out int l, out int r))
                 {
-                    var plantObj = _gridService.GetPlantAt(l, r);
-                    if (plantObj != null)
-                    {
-                        var possessable = plantObj.GetComponent<IPossessablePlant>();
-                        Transform target = possessable != null ? possessable.CameraMountPoint : plantObj.transform;
-                        _hudWindow.ShowTutorialStep3_Possession(target);
-                    }
+                    // Подсвечиваем клетку на земле
+                    _plantingService.ShowTutorialHighlight(l, r);
                 }
             }
         }
@@ -188,6 +183,9 @@ namespace Core.States
                 _hudWindow.HideTutorialArrow();
                 _hudWindow.SetDimmed(false);
                 _hudWindow.SetStartButtonVisible(true);
+                
+                // Убираем подсветку клетки
+                _plantingService.HideTutorialHighlight();
             }
             
             if (!_isBattleStarted && _isTutorialComplete) StartBattle();
@@ -213,8 +211,9 @@ namespace Core.States
                 SetCursorState(false);
             }
         }
-
-        // ... Остальной код (Exit, Subscribe, HandleClick, и т.д.) без изменений ...
+        
+        // ... (Остальной код без изменений) ...
+        
         public void Exit()
         {
             _windowService.Close(WindowID.HUD);

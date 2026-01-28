@@ -15,9 +15,6 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
-    /// <summary>
-    /// Manages the planting logic, including checking costs, grid occupation, and playing planting sounds.
-    /// </summary>
     public class PlantingService : IPlantingService, IDisposable, ITickable
     {
         public event Action<PlantType> OnPlantSelected;
@@ -183,6 +180,20 @@ namespace Infrastructure.Services.Planting
                     }
                 }
             }
+        }
+        
+        public void ShowTutorialHighlight(int lane, int row)
+        {
+             if (_visualizer == null || _levelProvider.CurrentLevel == null) return;
+             
+             Vector3 pos = _gridService.GridToWorld(lane, row);
+             _visualizer.ShowTutorialHighlight(pos, _levelProvider.CurrentLevel.LaneWidth, _levelProvider.CurrentLevel.CellLength);
+        }
+
+        public void HideTutorialHighlight()
+        {
+            if (_visualizer != null)
+                _visualizer.HideTutorialHighlight();
         }
     }
 }

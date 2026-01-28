@@ -83,14 +83,13 @@ namespace Physics
                 AudioSource.PlayClipAtPoint(_config.hitSound, transform.position, _audioService.SfxVolume);
             }
 
-            var damageable = other.gameObject.GetComponent<IDamageable>() ?? 
-                             other.gameObject.GetComponentInParent<IDamageable>();
+            var damageable = other.gameObject.GetComponent<IDamageable>();
 
             if (damageable != null && damageable.IsAlive)
             {
                 damageable.TakeDamage(_damage);
             }
-
+            
             Destroy(gameObject);
         }
     }

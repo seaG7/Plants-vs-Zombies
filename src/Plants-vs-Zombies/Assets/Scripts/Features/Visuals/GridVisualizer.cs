@@ -13,6 +13,8 @@ namespace Features.Visuals
 
         private GridCellHighlighter _cursorHighlighter;
         private GridCellHighlighter _finishLine;
+        private GridCellHighlighter _tutorialHighlighter; // New
+        
         private readonly List<GridCellHighlighter> _staticGrid = new();
         private readonly List<GridCellHighlighter> _laneLines = new();
         
@@ -21,11 +23,11 @@ namespace Features.Visuals
         private Material _gridMaterial;
         private Material _finishMaterial;
 
-        // Порядок слоев по высоте
         private const float HEIGHT_LANES = 0.5f;
         private const float HEIGHT_FINISH = 0.55f;
         private const float HEIGHT_GRID = 0.6f;
         private const float HEIGHT_CURSOR = 0.65f;
+        private const float HEIGHT_TUTORIAL = 0.70f; // Topmost
         
         private const float STATIC_WIDTH = 0.35f;
         private const float CURSOR_WIDTH = 0.9f;
@@ -40,6 +42,7 @@ namespace Features.Visuals
 
             _cursorHighlighter = CreateHighlighter("Cursor");
             _finishLine = CreateHighlighter("FinishLine");
+            _tutorialHighlighter = CreateHighlighter("TutorialHighlight");
         }
 
         private void LoadMaterials()
@@ -47,8 +50,6 @@ namespace Features.Visuals
             _cursorMaterial = Resources.Load<Material>(CURSOR_MAT_PATH);
             _gridMaterial = Resources.Load<Material>(GRID_MAT_PATH);
             _finishMaterial = Resources.Load<Material>(FINISH_MAT_PATH);
-
-            if (_finishMaterial == null) Debug.LogError($"[GridVisualizer] Material not found: {FINISH_MAT_PATH}");
         }
 
         public void ShowLaneLines(ILevelProvider levelProvider)
@@ -125,6 +126,15 @@ namespace Features.Visuals
             _cursorHighlighter.Show(position, width, length);
         }
 
+        public void ShowTutorialHighlight(Vector3 position, float width, float length)
+        {
+            _tutorialHighlighter.transform.position = new Vector3(0, HEIGHT_TUTORIAL, 0);
+            _tutorialHighlighter.SetMaterial(_cursorMaterial); 
+            _tutorialHighlighter.SetStyle(CURSOR_WIDTH * 1.1f, sortingOrder: 10);
+            _tutorialHighlighter.Show(position, width, length);
+        }
+        public void HideTutorialHighlight() => _tutorialHighlighter.Hide();
+
         public void HideCursor() => _cursorHighlighter.Hide();
         public void HideStaticGrid() { foreach (var h in _staticGrid) h.Hide(); }
 
@@ -132,6 +142,7 @@ namespace Features.Visuals
         {
             HideCursor();
             HideStaticGrid();
+            HideTutorialHighlight();
         }
         public void HideLaneLines() 
         { 

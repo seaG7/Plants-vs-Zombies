@@ -12,4 +12,4 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 409c462a8c684cf29ccb068efcc9cdc1, type: 3}
   m_Name: GameConfig
   m_EditorClassIdentifier: 
-  mainMenuMusic: {fileID: 0}
+  mainMenuMusic: {fileID: 8300000, guid: da25886cc20073c44ac21c586bce091e, type: 3}

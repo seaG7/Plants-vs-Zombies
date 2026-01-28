@@ -43,5 +43,5 @@ MonoBehaviour:
     - enemyType: 1
       count: 6
       spawnInterval: 1
-  levelMusic: {fileID: 0}
+  levelMusic: {fileID: 8300000, guid: 5ec8f153ec6daed41aa31ebacea2f1ec, type: 3}
   gameOverSound: {fileID: 8300000, guid: 83befd09b16008d4395dbb4b5c9794e9, type: 3}

@@ -19,18 +19,15 @@ namespace Infrastructure.Services.Audio
 
         public AudioService()
         {
-            MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 1f);
-            SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 1f);
-            
-            InitializeMusicSource();
+            MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 0.3f);
+            SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 0.3f);
         }
 
-        private void InitializeMusicSource()
+        public void InitializeMusicSource()
         {
             if (_musicObject == null)
             {
                 _musicObject = new GameObject("MusicSource_Global");
-                Object.DontDestroyOnLoad(_musicObject);
                 _musicSource = _musicObject.AddComponent<AudioSource>();
                 _musicSource.loop = true;
                 _musicSource.volume = MusicVolume;

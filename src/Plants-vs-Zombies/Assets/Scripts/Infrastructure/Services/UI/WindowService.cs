@@ -3,6 +3,7 @@ using Data.Paths;
 using Infrastructure.Factories.UI;
 using Infrastructure.Services.Window;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Infrastructure.Services.UI
 {
@@ -30,14 +31,31 @@ namespace Infrastructure.Services.UI
             
             if (windowID == WindowID.Loading && windowObj != null)
             {
+                // 1. Отцепляем от контекста сцены
                 windowObj.transform.SetParent(null);
+                
+                // 2. Делаем бессмертным
                 Object.DontDestroyOnLoad(windowObj);
-
+                
+                // 3. Выставляем максимальный порядок сортировки
                 var canvas = windowObj.GetComponent<Canvas>();
                 if (canvas != null)
                 {
-                    canvas.sortingOrder = 999; 
+                    canvas.sortingOrder = 9999; 
+                    canvas.renderMode = RenderMode.ScreenSpaceOverlay; // Гарантируем видимость
                 }
+                
+                // 4. Проверка EventSystem (если старая удалилась при смене сцены)
+                CheckEventSystem();
+            }
+        }
+
+        private void CheckEventSystem()
+        {
+            if (EventSystem.current == null)
+            {
+                var eventSystem = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+                Object.DontDestroyOnLoad(eventSystem);
             }
         }
 

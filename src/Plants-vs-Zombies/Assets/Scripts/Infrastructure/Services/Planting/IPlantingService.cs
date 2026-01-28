@@ -13,5 +13,7 @@ namespace Infrastructure.Services.Planting
         void ClearSelection();
         void Initialize();
         void Dispose();
+        void ShowTutorialHighlight(int lane, int row);
+        void HideTutorialHighlight();
     }
 }
