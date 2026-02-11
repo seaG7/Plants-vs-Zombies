@@ -5,13 +5,13 @@ using Infrastructure.Services;
 using Infrastructure.Services.Audio;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Window;
-using UnityEngine;
+using Infrastructure.Services.Yandex;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
     /// <summary>
-    /// Handles main menu initialization and hides the loading screen.
+    /// Main menu state. Marks GameplayStart as UI is interactive.
     /// </summary>
     public class MainMenuState : IState, IEnterable, IExitable
     {
@@ -19,32 +19,31 @@ namespace Core.States
         private readonly IWindowService _windowService;
         private readonly IAudioService _audioService;
         private readonly IStaticDataProvider _staticData;
+        private readonly IYandexService _yandexService;
 
         public MainMenuState(
             ISceneLoaderService sceneLoader, 
             IWindowService windowService, 
             IAudioService audioService,
-            IStaticDataProvider staticData)
+            IStaticDataProvider staticData,
+            IYandexService yandexService)
         {
             _sceneLoader = sceneLoader;
             _windowService = windowService;
             _audioService = audioService;
             _staticData = staticData;
+            _yandexService = yandexService;
         }
 
         public async void Enter()
         {
-            if (SceneManager.GetActiveScene().name != ScenesPaths.MAIN_MENU)
-            {
-                await _sceneLoader.LoadScene(ScenesPaths.MAIN_MENU, LoadSceneMode.Single);
-            }
+            _yandexService.GameplayStart();
 
             await _windowService.Open(WindowID.MainMenu);
 
             var gameConfig = _staticData.GetGameConfig();
             if (gameConfig != null && gameConfig.mainMenuMusic != null)
             {
-                Debug.Log("MUSIC");
                 _audioService.InitializeMusicSource();
                 _audioService.PlayMusic(gameConfig.mainMenuMusic);
             }
@@ -52,13 +51,11 @@ namespace Core.States
             _windowService.Close(WindowID.Loading);
         }
 
-        public async void Exit()
+        public void Exit()
         {
             _windowService.Close(WindowID.MainMenu);
             if (_windowService.IsWindowOpened(WindowID.Settings))
-            {
                 _windowService.Close(WindowID.Settings);
-            }
         }
     }
 }

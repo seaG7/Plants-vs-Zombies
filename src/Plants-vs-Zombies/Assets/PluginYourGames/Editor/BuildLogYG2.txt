@@ -1,0 +1,3 @@
+﻿Build path: D:/Yandex/PvZ/Builds
+Build number: 5
+PluginYG version: 2.007

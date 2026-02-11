@@ -1,26 +1,24 @@
-﻿using UnityEngine;
+﻿using Infrastructure.Services.Yandex;
+using UnityEngine;
 
 namespace Infrastructure.Services.Audio
 {
     /// <summary>
-    /// Manages global audio, volume control, and background music persistence.
+    /// Manages audio volumes using Yandex saves for persistence.
     /// </summary>
     public class AudioService : IAudioService
     {
-        private const string MUSIC_KEY = "MusicVolume";
-        private const string SFX_KEY = "SfxVolume";
-
+        private readonly IYandexService _yandexService;
         private AudioSource _musicSource;
         private GameObject _musicObject;
 
         public float MasterVolume => AudioListener.volume;
-        public float MusicVolume { get; private set; }
-        public float SfxVolume { get; private set; }
+        public float MusicVolume => _yandexService.GetMusicVolume();
+        public float SfxVolume => _yandexService.GetSfxVolume();
 
-        public AudioService()
+        public AudioService(IYandexService yandexService)
         {
-            MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 0.3f);
-            SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 0.3f);
+            _yandexService = yandexService;
         }
 
         public void InitializeMusicSource()
@@ -28,6 +26,7 @@ namespace Infrastructure.Services.Audio
             if (_musicObject == null)
             {
                 _musicObject = new GameObject("MusicSource_Global");
+                Object.DontDestroyOnLoad(_musicObject);
                 _musicSource = _musicObject.AddComponent<AudioSource>();
                 _musicSource.loop = true;
                 _musicSource.volume = MusicVolume;
@@ -41,25 +40,25 @@ namespace Infrastructure.Services.Audio
 
         public void SetMusicVolume(float value)
         {
-            MusicVolume = Mathf.Clamp01(value);
+            float clamped = Mathf.Clamp01(value);
+            _yandexService.SetMusicVolume(clamped);
+            
             if (_musicSource != null)
-            {
-                _musicSource.volume = MusicVolume;
-            }
-            PlayerPrefs.SetFloat(MUSIC_KEY, MusicVolume);
-            PlayerPrefs.Save();
+                _musicSource.volume = clamped;
         }
 
         public void SetSfxVolume(float value)
         {
-            SfxVolume = Mathf.Clamp01(value);
-            PlayerPrefs.SetFloat(SFX_KEY, SfxVolume);
-            PlayerPrefs.Save();
+            float clamped = Mathf.Clamp01(value);
+            _yandexService.SetSfxVolume(clamped);
         }
 
         public void PlayMusic(AudioClip clip)
         {
-            if (clip == null || (_musicSource.clip == clip && _musicSource.isPlaying)) return;
+            if (clip == null) return;
+            if (_musicSource == null) InitializeMusicSource();
+
+            if (_musicSource.clip == clip && _musicSource.isPlaying) return;
 
             _musicSource.clip = clip;
             _musicSource.volume = MusicVolume;

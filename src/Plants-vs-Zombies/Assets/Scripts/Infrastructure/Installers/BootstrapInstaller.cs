@@ -16,9 +16,10 @@ using Infrastructure.Services.Lanes;
 using Infrastructure.Services.PhysicsCalculation;
 using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
-using Infrastructure.Services.UI;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
+using Infrastructure.Services.Yandex;
+using UI;
 using Zenject;
 
 namespace Infrastructure.Installers
@@ -51,6 +52,10 @@ namespace Infrastructure.Installers
             Container.Bind<StateMachine>().AsSingle();
             Container.Bind<ISceneLoaderService>().To<SceneLoaderService>().AsSingle();
             Container.Bind<IWindowService>().To<WindowService>().AsSingle();
+
+            Container.Bind<IYandexService>().To<YandexService>().AsSingle();
+            Container.Bind<IAudioService>().To<AudioService>().AsSingle();
+            
             Container.BindInterfacesAndSelfTo<InputService>().AsSingle().NonLazy();
             
             Container.Bind<IAerodynamicsCalculationService>().To<AerodynamicsCalculationService>().AsSingle();
@@ -64,7 +69,6 @@ namespace Infrastructure.Installers
             Container.Bind<ICameraService>().To<CameraService>().AsSingle();
             Container.BindInterfacesAndSelfTo<PlantingService>().AsSingle();
             Container.Bind<IPlantTrackerService>().To<PlantTrackerService>().AsSingle();
-            Container.Bind<IAudioService>().To<AudioService>().AsSingle();
         }
 
         private void BindFactories()

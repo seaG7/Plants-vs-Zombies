@@ -234,15 +234,11 @@ using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
-    /// <summary>
-    /// Handles the transition from Menu to Game: shows loading, resets data, loads scene.
-    /// </summary>
     public class GameLoadState : IState, IEnterable
     {
         private readonly StateMachine _stateMachine;
         private readonly ISceneLoaderService _sceneLoader;
         private readonly IWindowService _windowService;
-
         private readonly IEconomyService _economyService;
         private readonly IGridService _gridService;
         private readonly IPlantTrackerService _plantTracker;
@@ -271,15 +267,16 @@ namespace Core.States
 
         public async void Enter()
         {
+            // Открываем окно
             await _windowService.Open(WindowID.Loading);
-
-            await UniTask.Yield(PlayerLoopTiming.Update);
+            
+            // Ждем 1 кадр, чтобы окно точно появилось перед фризом загрузки сцены
+            await UniTask.DelayFrame(1);
 
             _economyService.Reset();
             _gridService.Reset();
             _plantTracker.Clear();
             _waveService.StopLevel();
-            
             _factory.Cleanup();
 
             await _sceneLoader.LoadScene(ScenesPaths.GAME, LoadSceneMode.Single);
@@ -295,12 +292,12 @@ guid: 030378cef7904614b554859663d040b0
 timeCreated: 1769535458
 
 // ===== Core/States/GameplayState.cs =====
-﻿// ... imports ...
-using UI.HUD;
-using UnityEngine;
+﻿using System.Linq;
+using Cysharp.Threading.Tasks; // Для UniTask если понадобится
 using Core.BaseStates;
 using Core.Interfaces;
 using Data.Enums;
+using Data.Path;
 using Features.Enemy;
 using Features.Plants;
 using Infrastructure.Providers.Context;
@@ -315,12 +312,14 @@ using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
+using UI.HUD;
+using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Core.States
 {
     public class GameplayState : IState, IEnterable, IExitable
     {
-        // ... (dependencies) ...
         private readonly StateMachine _stateMachine;
         private readonly IWindowService _windowService;
         private readonly IInputService _inputService;
@@ -382,14 +381,11 @@ namespace Core.States
         {
             _isGameOver = false;
             _isBattleStarted = false; 
-            
-            // Сброс
             _isTutorialComplete = false;
             _tutorialStep = 0;
             
             _hudWindow = await _windowService.OpenAndGet<HudWindow>(WindowID.HUD);
             _hudWindow.BindButtons(OnRestartClicked, OnMenuClicked, StartBattle, OnSettingsClicked);
-            
             _hudWindow.SetStartButtonVisible(false);
             
             _inputService.Enable();
@@ -413,11 +409,12 @@ namespace Core.States
             var levelData = _staticData.GetLevelData();
             if (levelData != null && levelData.levelMusic != null)
             {
+                _audioService.InitializeMusicSource();
                 _audioService.PlayMusic(levelData.levelMusic);
             }
-
+            
             _windowService.Close(WindowID.Loading);
-
+            
             StartTutorial();
         }
 
@@ -432,18 +429,15 @@ namespace Core.States
         {
             if (_isTutorialComplete) return;
 
-            // Шаг 2: Игрок выбрал растение. Убираем затемнение, показываем стрелку на Origin2
+            // Шаг 2: Выбрано растение. Стрелка на Origin2 (Grid).
             if (type != PlantType.None && _tutorialStep == 0)
             {
                 _tutorialStep = 1;
+                _hudWindow.SetDimmed(false); 
                 
-                _hudWindow.SetDimmed(false); // Выключаем Dimmed
-                
-                // Включаем призрака
                 var data = _staticData.GetPlantData(type);
                 if (data != null) _hudWindow.SetGhost(data.icon);
                 
-                // Показываем стрелку на Origin2
                 _hudWindow.ShowTutorialStep2_Placement();
             }
             else if (type == PlantType.None)
@@ -456,22 +450,20 @@ namespace Core.States
         {
             if (_isTutorialComplete) return;
             
-            // Шаг 3: Растение посажено. Стрелка указывает на него в мире.
+            // Шаг 3: Растение посажено. Стрелка ВСЕ ЕЩЕ на Origin2.
+            // Но мы подсвечиваем клетку, куда нужно нажать.
             if (_tutorialStep == 1)
             {
                 _tutorialStep = 2;
                 _hudWindow.SetGhost(null);
                 
-                // Находим объект растения
+                // Стрелка остается на Origin2 (по запросу)
+                _hudWindow.ShowTutorialStep3_Possession();
+
                 if (_gridService.WorldToGrid(pos, out int l, out int r))
                 {
-                    var plantObj = _gridService.GetPlantAt(l, r);
-                    if (plantObj != null)
-                    {
-                        var possessable = plantObj.GetComponent<IPossessablePlant>();
-                        Transform target = possessable != null ? possessable.CameraMountPoint : plantObj.transform;
-                        _hudWindow.ShowTutorialStep3_Possession(target);
-                    }
+                    // Подсвечиваем клетку на земле
+                    _plantingService.ShowTutorialHighlight(l, r);
                 }
             }
         }
@@ -485,6 +477,9 @@ namespace Core.States
                 _hudWindow.HideTutorialArrow();
                 _hudWindow.SetDimmed(false);
                 _hudWindow.SetStartButtonVisible(true);
+                
+                // Убираем подсветку клетки
+                _plantingService.HideTutorialHighlight();
             }
             
             if (!_isBattleStarted && _isTutorialComplete) StartBattle();
@@ -510,8 +505,9 @@ namespace Core.States
                 SetCursorState(false);
             }
         }
-
-        // ... Остальной код (Exit, Subscribe, HandleClick, и т.д.) без изменений ...
+        
+        // ... (Остальной код без изменений) ...
+        
         public void Exit()
         {
             _windowService.Close(WindowID.HUD);
@@ -703,6 +699,7 @@ using Infrastructure.Services;
 using Infrastructure.Services.Audio;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Window;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
@@ -741,6 +738,8 @@ namespace Core.States
             var gameConfig = _staticData.GetGameConfig();
             if (gameConfig != null && gameConfig.mainMenuMusic != null)
             {
+                Debug.Log("MUSIC");
+                _audioService.InitializeMusicSource();
                 _audioService.PlayMusic(gameConfig.mainMenuMusic);
             }
             
@@ -1903,6 +1902,8 @@ namespace Features.Visuals
 
         private GridCellHighlighter _cursorHighlighter;
         private GridCellHighlighter _finishLine;
+        private GridCellHighlighter _tutorialHighlighter; // New
+        
         private readonly List<GridCellHighlighter> _staticGrid = new();
         private readonly List<GridCellHighlighter> _laneLines = new();
         
@@ -1911,11 +1912,11 @@ namespace Features.Visuals
         private Material _gridMaterial;
         private Material _finishMaterial;
 
-        // Порядок слоев по высоте
         private const float HEIGHT_LANES = 0.5f;
         private const float HEIGHT_FINISH = 0.55f;
         private const float HEIGHT_GRID = 0.6f;
         private const float HEIGHT_CURSOR = 0.65f;
+        private const float HEIGHT_TUTORIAL = 0.70f; // Topmost
         
         private const float STATIC_WIDTH = 0.35f;
         private const float CURSOR_WIDTH = 0.9f;
@@ -1930,6 +1931,7 @@ namespace Features.Visuals
 
             _cursorHighlighter = CreateHighlighter("Cursor");
             _finishLine = CreateHighlighter("FinishLine");
+            _tutorialHighlighter = CreateHighlighter("TutorialHighlight");
         }
 
         private void LoadMaterials()
@@ -1937,8 +1939,6 @@ namespace Features.Visuals
             _cursorMaterial = Resources.Load<Material>(CURSOR_MAT_PATH);
             _gridMaterial = Resources.Load<Material>(GRID_MAT_PATH);
             _finishMaterial = Resources.Load<Material>(FINISH_MAT_PATH);
-
-            if (_finishMaterial == null) Debug.LogError($"[GridVisualizer] Material not found: {FINISH_MAT_PATH}");
         }
 
         public void ShowLaneLines(ILevelProvider levelProvider)
@@ -2015,6 +2015,15 @@ namespace Features.Visuals
             _cursorHighlighter.Show(position, width, length);
         }
 
+        public void ShowTutorialHighlight(Vector3 position, float width, float length)
+        {
+            _tutorialHighlighter.transform.position = new Vector3(0, HEIGHT_TUTORIAL, 0);
+            _tutorialHighlighter.SetMaterial(_cursorMaterial); 
+            _tutorialHighlighter.SetStyle(CURSOR_WIDTH * 1.1f, sortingOrder: 10);
+            _tutorialHighlighter.Show(position, width, length);
+        }
+        public void HideTutorialHighlight() => _tutorialHighlighter.Hide();
+
         public void HideCursor() => _cursorHighlighter.Hide();
         public void HideStaticGrid() { foreach (var h in _staticGrid) h.Hide(); }
 
@@ -2022,6 +2031,7 @@ namespace Features.Visuals
         {
             HideCursor();
             HideStaticGrid();
+            HideTutorialHighlight();
         }
         public void HideLaneLines() 
         { 
@@ -2884,18 +2894,15 @@ namespace Infrastructure.Services.Audio
 
         public AudioService()
         {
-            MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 1f);
-            SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 1f);
-            
-            InitializeMusicSource();
+            MusicVolume = PlayerPrefs.GetFloat(MUSIC_KEY, 0.3f);
+            SfxVolume = PlayerPrefs.GetFloat(SFX_KEY, 0.3f);
         }
 
-        private void InitializeMusicSource()
+        public void InitializeMusicSource()
         {
             if (_musicObject == null)
             {
                 _musicObject = new GameObject("MusicSource_Global");
-                Object.DontDestroyOnLoad(_musicObject);
                 _musicSource = _musicObject.AddComponent<AudioSource>();
                 _musicSource.loop = true;
                 _musicSource.volume = MusicVolume;
@@ -2957,6 +2964,7 @@ namespace Infrastructure.Services.Audio
         void SetMusicVolume(float value);
         void SetSfxVolume(float value);
         void PlayMusic(AudioClip clip);
+        void InitializeMusicSource();
     }
 }
 
@@ -3655,6 +3663,8 @@ namespace Infrastructure.Services.Planting
         void ClearSelection();
         void Initialize();
         void Dispose();
+        void ShowTutorialHighlight(int lane, int row);
+        void HideTutorialHighlight();
     }
 }
 
@@ -3739,9 +3749,6 @@ using Zenject;
 
 namespace Infrastructure.Services.Planting
 {
-    /// <summary>
-    /// Manages the planting logic, including checking costs, grid occupation, and playing planting sounds.
-    /// </summary>
     public class PlantingService : IPlantingService, IDisposable, ITickable
     {
         public event Action<PlantType> OnPlantSelected;
@@ -3908,6 +3915,20 @@ namespace Infrastructure.Services.Planting
                 }
             }
         }
+        
+        public void ShowTutorialHighlight(int lane, int row)
+        {
+             if (_visualizer == null || _levelProvider.CurrentLevel == null) return;
+             
+             Vector3 pos = _gridService.GridToWorld(lane, row);
+             _visualizer.ShowTutorialHighlight(pos, _levelProvider.CurrentLevel.LaneWidth, _levelProvider.CurrentLevel.CellLength);
+        }
+
+        public void HideTutorialHighlight()
+        {
+            if (_visualizer != null)
+                _visualizer.HideTutorialHighlight();
+        }
     }
 }
 
@@ -4026,6 +4047,7 @@ using Data.Paths;
 using Infrastructure.Factories.UI;
 using Infrastructure.Services.Window;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace Infrastructure.Services.UI
 {
@@ -4053,14 +4075,31 @@ namespace Infrastructure.Services.UI
             
             if (windowID == WindowID.Loading && windowObj != null)
             {
+                // 1. Отцепляем от контекста сцены
                 windowObj.transform.SetParent(null);
+                
+                // 2. Делаем бессмертным
                 Object.DontDestroyOnLoad(windowObj);
-
+                
+                // 3. Выставляем максимальный порядок сортировки
                 var canvas = windowObj.GetComponent<Canvas>();
                 if (canvas != null)
                 {
-                    canvas.sortingOrder = 999; 
+                    canvas.sortingOrder = 9999; 
+                    canvas.renderMode = RenderMode.ScreenSpaceOverlay; // Гарантируем видимость
                 }
+                
+                // 4. Проверка EventSystem (если старая удалилась при смене сцены)
+                CheckEventSystem();
+            }
+        }
+
+        private void CheckEventSystem()
+        {
+            if (EventSystem.current == null)
+            {
+                var eventSystem = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+                Object.DontDestroyOnLoad(eventSystem);
             }
         }
 
@@ -4353,14 +4392,13 @@ namespace Physics
                 AudioSource.PlayClipAtPoint(_config.hitSound, transform.position, _audioService.SfxVolume);
             }
 
-            var damageable = other.gameObject.GetComponent<IDamageable>() ?? 
-                             other.gameObject.GetComponentInParent<IDamageable>();
+            var damageable = other.gameObject.GetComponent<IDamageable>();
 
             if (damageable != null && damageable.IsAlive)
             {
                 damageable.TakeDamage(_damage);
             }
-
+            
             Destroy(gameObject);
         }
     }
@@ -4571,11 +4609,10 @@ namespace UI.HUD
         [Header("Tutorial UI")]
         [SerializeField] private GameObject _dimmedPanel; 
         [SerializeField] private RectTransform _tutorialArrow;
-        [SerializeField] private RectTransform _tutorialOrigin1;
-        [SerializeField] private RectTransform _tutorialOrigin2;
+        [SerializeField] private RectTransform _tutorialOrigin1; // Выбор карты
+        [SerializeField] private RectTransform _tutorialOrigin2; // Поле (Grid)
         
         [SerializeField] private float _arrowAnimDuration = 0.6f;
-        [SerializeField] private float _arrowWorldYOffset = 50f;
 
         [Header("Action Mode UI")]
         [SerializeField] private GameObject _actionPanel;
@@ -4595,6 +4632,7 @@ namespace UI.HUD
         [Header("Battle Controls")]
         [SerializeField] private Button _startBattleButton;
 
+        // ... (Services and fields) ...
         [Header("Text Config")]
         [SerializeField] private string _textReady = "СНАРЯД ГОТОВ";
         [SerializeField] private string _textReloading = "ПЕРЕЗАРЯДКА...";
@@ -4614,9 +4652,6 @@ namespace UI.HUD
         private float _lastUpdateTimer;
         private IPossessablePlant _activePlant;
         private float _warningTimer;
-
-        private bool _isArrowTrackingWorld;
-        private Transform _worldTrackingTarget;
         private Tween _arrowTween;
 
         [Inject]
@@ -4663,6 +4698,8 @@ namespace UI.HUD
             UnsubscribeActivePlant();
         }
 
+        // --- Tutorial Public Methods ---
+
         public void SetDimmed(bool isActive)
         {
             if (_dimmedPanel != null)
@@ -4674,8 +4711,7 @@ namespace UI.HUD
             if (_tutorialOrigin1 == null) return;
             
             SetupArrow();
-            _isArrowTrackingWorld = false;
-
+            
             _tutorialArrow.position = _tutorialOrigin1.position;
             _tutorialArrow.rotation = Quaternion.Euler(0, 0, 0);
 
@@ -4688,10 +4724,25 @@ namespace UI.HUD
         public void ShowTutorialStep2_Placement()
         {
             if (_tutorialOrigin2 == null) return;
-
             SetupArrow();
-            _isArrowTrackingWorld = false;
+            AnimateArrowAtOrigin2();
+        }
 
+        // ШАГ 3: Оставляем стрелку там же, где она была (Origin2)
+        public void ShowTutorialStep3_Possession()
+        {
+            if (_tutorialOrigin2 == null) return;
+            // Убеждаемся, что стрелка активна и на месте
+            if (!_tutorialArrow.gameObject.activeSelf)
+            {
+                SetupArrow();
+                AnimateArrowAtOrigin2();
+            }
+            // Можно добавить пульсацию, если хочется отличий
+        }
+
+        private void AnimateArrowAtOrigin2()
+        {
             _tutorialArrow.position = _tutorialOrigin2.position;
             _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
 
@@ -4701,19 +4752,6 @@ namespace UI.HUD
                 .SetEase(Ease.InOutSine);
         }
 
-        public void ShowTutorialStep3_Possession(Transform target)
-        {
-            SetupArrow();
-            _isArrowTrackingWorld = true;
-            _worldTrackingTarget = target;
-            
-            _tutorialArrow.rotation = Quaternion.Euler(0, 0, -90);
-
-            // Анимация пульсации
-            _arrowTween = _tutorialArrow.DOScale(1.2f, _arrowAnimDuration)
-                .SetLoops(-1, LoopType.Yoyo);
-        }
-
         public void HideTutorialArrow()
         {
             if (_tutorialArrow != null)
@@ -4721,8 +4759,6 @@ namespace UI.HUD
                 _arrowTween?.Kill();
                 _tutorialArrow.gameObject.SetActive(false);
             }
-            _isArrowTrackingWorld = false;
-            _worldTrackingTarget = null;
         }
 
         public void SetGhost(Sprite sprite)
@@ -4758,28 +4794,10 @@ namespace UI.HUD
             {
                 _plantingGhostImage.transform.position = _inputService.GetPointerPosition();
             }
-
-            if (_isArrowTrackingWorld && _tutorialArrow.gameObject.activeSelf && _worldTrackingTarget != null)
-            {
-                Vector3 screenPos = Camera.main.WorldToScreenPoint(_worldTrackingTarget.position);
-                
-                // Если Z < 0, объект сзади камеры
-                if (screenPos.z < 0) 
-                {
-                    _tutorialArrow.gameObject.SetActive(false);
-                }
-                else
-                {
-                    if (!_tutorialArrow.gameObject.activeSelf) 
-                        _tutorialArrow.gameObject.SetActive(true);
-
-                    screenPos.z = 0;
-
-                    _tutorialArrow.GetComponentInChildren<RectTransform>().position = new Vector3(0, _arrowWorldYOffset, 0);
-                }
-            }
+            // Логика 3D трекинга полностью убрана
         }
         
+        // ... (BindButtons, ShowGameOverPanel, SetActivePlant...)
         public void BindButtons(Action onRestart, Action onMenu, Action onStartBattle, Action onSettings)
         {
             _restartButton.onClick.AddListener(() => onRestart?.Invoke());
@@ -4795,6 +4813,7 @@ namespace UI.HUD
             _gameOverTitle.text = isVictory ? "VICTORY!" : "GAME OVER";
             _settingsButton.gameObject.SetActive(false);
             _exitToMenuButton.gameObject.SetActive(false);
+            
             HideTutorialArrow();
             SetGhost(null);
             SetDimmed(false);
@@ -4804,26 +4823,14 @@ namespace UI.HUD
         {
             UnsubscribeActivePlant();
             _activePlant = plant;
-
-            if (_activePlant != null)
-            {
-                ToggleActionPanel(true);
-                _activePlant.OnFireFailedCooldown += ShowCooldownWarning;
-            }
-            else
-            {
-                ToggleActionPanel(false);
-            }
+            if (_activePlant != null) { ToggleActionPanel(true); _activePlant.OnFireFailedCooldown += ShowCooldownWarning; }
+            else { ToggleActionPanel(false); }
             RebuildActivePlantsList();
         }
 
         private void UnsubscribeActivePlant()
         {
-            if (_activePlant != null)
-            {
-                _activePlant.OnFireFailedCooldown -= ShowCooldownWarning;
-                _activePlant = null;
-            }
+            if (_activePlant != null) { _activePlant.OnFireFailedCooldown -= ShowCooldownWarning; _activePlant = null; }
         }
         
         private void ShowCooldownWarning()
@@ -4839,41 +4846,22 @@ namespace UI.HUD
             float progress = _activePlant.GetReloadProgress();
             _cooldownSlider.value = progress;
             bool isReady = progress >= 0.99f;
-            if (isReady)
-            {
-                _warningTimer = 0f;
-                _cooldownStatusText.text = _textReady;
-                _cooldownStatusText.color = _colorReady;
-            }
-            else if (_warningTimer > 0)
-            {
-                _warningTimer -= Time.deltaTime;
-            }
-            else
-            {
-                _cooldownStatusText.text = _textReloading;
-                _cooldownStatusText.color = Color.white;
-            }
+            if (isReady) { _warningTimer = 0f; _cooldownStatusText.text = _textReady; _cooldownStatusText.color = _colorReady; }
+            else if (_warningTimer > 0) { _warningTimer -= Time.deltaTime; }
+            else { _cooldownStatusText.text = _textReloading; _cooldownStatusText.color = Color.white; }
         }
 
         private void UpdateFPS()
         {
             _lastUpdateTimer += Time.deltaTime;
-            if (_lastUpdateTimer >= 0.5f)
-            {
-                _fpsText.text = $"{_fpsService.CurrentFps:F0}";
-                _lastUpdateTimer = 0f;
-            }
+            if (_lastUpdateTimer >= 0.5f) { _fpsText.text = $"{_fpsService.CurrentFps:F0}"; _lastUpdateTimer = 0f; }
         }
         
         private void UpdateCardsAvailability()
         {
             int currentSun = _economyService.CurrentSun;
             var plants = _staticData.GetAllPlants();
-            for (int i = 0; i < _cards.Count && i < plants.Count; i++)
-            {
-                _cards[i].SetAffordable(currentSun >= plants[i].cost);
-            }
+            for (int i = 0; i < _cards.Count && i < plants.Count; i++) { _cards[i].SetAffordable(currentSun >= plants[i].cost); }
         }
 
         private void InitializeCards()
@@ -4896,8 +4884,7 @@ namespace UI.HUD
             for (int i = 0; i < plants.Count; i++)
             {
                 var plant = plants[i];
-                var view = _container.
-                    InstantiatePrefabForComponent<ActivePlantView>(_activePlantPrefab, _activePlantsContainer);
+                var view = _container.InstantiatePrefabForComponent<ActivePlantView>(_activePlantPrefab, _activePlantsContainer);
                 PlantType type = PlantType.None;
                 if (plant is CannonController) type = PlantType.CoconutCannon;
                 else if (plant is PeashooterController) type = PlantType.Peashooter;
@@ -4909,18 +4896,9 @@ namespace UI.HUD
         private void OnCardClicked(PlantData data) => _plantingService.SelectPlant(data.type);
         private void HandlePlantSelected(PlantType type) { }
         private void UpdateSunDisplay(int amount) => _sunText.text = $"{amount}";
-
         public void SetGameplayVisibility(bool isVisible) => _gameplayPanel.SetActive(isVisible);
-        
-        private void ToggleActionPanel(bool isActive)
-        {
-            if (_actionPanel != null) _actionPanel.SetActive(isActive);
-        }
-        public void SetStartButtonVisible(bool isVisible)
-        {
-            if (_startBattleButton != null) 
-                _startBattleButton.gameObject.SetActive(isVisible);
-        }
+        private void ToggleActionPanel(bool isActive) { if (_actionPanel != null) _actionPanel.SetActive(isActive); }
+        public void SetStartButtonVisible(bool isVisible) { if (_startBattleButton != null) _startBattleButton.gameObject.SetActive(isVisible); }
     }
 }
 

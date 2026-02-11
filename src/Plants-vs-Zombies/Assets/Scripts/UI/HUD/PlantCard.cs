@@ -1,5 +1,6 @@
 ﻿using System;
 using Data.Configs;
+using Data.Enums;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -29,6 +30,11 @@ namespace UI.HUD
         }
 
         private void OnClick() => _onClick?.Invoke(_data);
+
+        public void CheckSelection(PlantType selectedType)
+        {
+            SetSelected(_data.type == selectedType);
+        }
 
         public void SetSelected(bool isSelected)
         {

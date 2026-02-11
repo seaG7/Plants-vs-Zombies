@@ -1,0 +1,20 @@
+{
+    "stringKeys": [],
+    "stringValues": [],
+    "floatKeys": [],
+    "floatValues": [],
+    "intKeys": [],
+    "intValues": [],
+    "intExample": 5,
+    "strExample": "Hello!",
+    "boolExample": [
+        false,
+        false,
+        false,
+        false
+    ],
+    "idSave": 33,
+    "totalGold": 125,
+    "musicVolume": 0.05057624354958534,
+    "sfxVolume": 0.5
+}

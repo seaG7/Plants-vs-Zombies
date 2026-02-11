@@ -104,6 +104,7 @@ MonoBehaviour:
   _reloadSlider: {fileID: 6078037512697365749}
   _hotkeyText: {fileID: 2045639697580799895}
   _selectionBorder: {fileID: 433643161622704654}
+  _selectButton: {fileID: 2819373736252654955}
 --- !u!1 &1170167698800057208
 GameObject:
   m_ObjectHideFlags: 0

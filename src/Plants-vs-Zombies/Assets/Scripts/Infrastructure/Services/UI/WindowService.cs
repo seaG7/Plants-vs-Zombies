@@ -1,25 +1,52 @@
-﻿using System.Threading.Tasks;
+﻿// ===== Infrastructure/Services/UI/WindowService.cs =====
+using System.Threading.Tasks;
 using Data.Paths;
 using Infrastructure.Factories.UI;
-using Infrastructure.Services.Window;
+using UI;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-namespace Infrastructure.Services.UI
+namespace Infrastructure.Services.Window
 {
+    /// <summary>
+    /// Global window service. Allows manual registration of a preloaded loading screen.
+    /// </summary>
     public class WindowService : IWindowService
     {
         private readonly IUIFactory _uiFactory;
+        private LoadingWindow _preloadedLoadingScreen;
 
         public WindowService(IUIFactory uiFactory)
         {
             _uiFactory = uiFactory;
         }
 
-        public bool IsWindowOpened(WindowID windowID) => _uiFactory.Exists(windowID);
+        public void RegisterLoadingScreen(LoadingWindow window)
+        {
+            _preloadedLoadingScreen = window;
+            if (_preloadedLoadingScreen != null)
+            {
+                Object.DontDestroyOnLoad(_preloadedLoadingScreen.gameObject);
+                CheckEventSystem();
+            }
+        }
+
+        public bool IsWindowOpened(WindowID windowID)
+        {
+            if (windowID == WindowID.Loading && _preloadedLoadingScreen != null)
+                return _preloadedLoadingScreen.gameObject.activeSelf;
+                
+            return _uiFactory.Exists(windowID);
+        }
 
         public async Task Open(WindowID windowID)
         {
+            if (windowID == WindowID.Loading && _preloadedLoadingScreen != null)
+            {
+                _preloadedLoadingScreen.Show();
+                return;
+            }
+
             var path = GetWindowsPath(windowID);
             if (string.IsNullOrEmpty(path))
             {
@@ -31,23 +58,49 @@ namespace Infrastructure.Services.UI
             
             if (windowID == WindowID.Loading && windowObj != null)
             {
-                // 1. Отцепляем от контекста сцены
                 windowObj.transform.SetParent(null);
-                
-                // 2. Делаем бессмертным
                 Object.DontDestroyOnLoad(windowObj);
                 
-                // 3. Выставляем максимальный порядок сортировки
                 var canvas = windowObj.GetComponent<Canvas>();
                 if (canvas != null)
                 {
                     canvas.sortingOrder = 9999; 
-                    canvas.renderMode = RenderMode.ScreenSpaceOverlay; // Гарантируем видимость
+                    canvas.renderMode = RenderMode.ScreenSpaceOverlay; 
                 }
                 
-                // 4. Проверка EventSystem (если старая удалилась при смене сцены)
                 CheckEventSystem();
             }
+        }
+
+        public async Task<T> OpenAndGet<T>(WindowID windowID) where T : Component
+        {
+            await Open(windowID);
+            
+            if (windowID == WindowID.Loading && _preloadedLoadingScreen != null)
+            {
+                return _preloadedLoadingScreen.GetComponent<T>();
+            }
+
+            return _uiFactory.GetScreenComponent<T>(windowID);
+        }
+
+        public T Get<T>(WindowID windowID) where T : Component 
+        {
+            if (windowID == WindowID.Loading && _preloadedLoadingScreen != null)
+            {
+                return _preloadedLoadingScreen.GetComponent<T>();
+            }
+            return _uiFactory.GetScreenComponent<T>(windowID);
+        }
+
+        public void Close(WindowID windowID)
+        {
+            if (windowID == WindowID.Loading && _preloadedLoadingScreen != null)
+            {
+                _preloadedLoadingScreen.Hide();
+                return;
+            }
+            _uiFactory.DestroyScreen(windowID);
         }
 
         private void CheckEventSystem()
@@ -58,17 +111,6 @@ namespace Infrastructure.Services.UI
                 Object.DontDestroyOnLoad(eventSystem);
             }
         }
-
-        public async Task<T> OpenAndGet<T>(WindowID windowID) where T : Component
-        {
-            await Open(windowID);
-            return _uiFactory.GetScreenComponent<T>(windowID);
-        }
-
-        public T Get<T>(WindowID windowID) where T : Component => 
-            _uiFactory.GetScreenComponent<T>(windowID);
-
-        public void Close(WindowID windowID) => _uiFactory.DestroyScreen(windowID);
 
         private string GetWindowsPath(WindowID windowID) => windowID switch
         {

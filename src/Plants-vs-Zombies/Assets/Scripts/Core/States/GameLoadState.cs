@@ -9,6 +9,7 @@ using Infrastructure.Services.Planting;
 using Infrastructure.Services.Scene;
 using Infrastructure.Services.Waves;
 using Infrastructure.Services.Window;
+using UnityEngine;
 using UnityEngine.SceneManagement;
 
 namespace Core.States
@@ -46,10 +47,8 @@ namespace Core.States
 
         public async void Enter()
         {
-            // Открываем окно
             await _windowService.Open(WindowID.Loading);
-            
-            // Ждем 1 кадр, чтобы окно точно появилось перед фризом загрузки сцены
+
             await UniTask.DelayFrame(1);
 
             _economyService.Reset();

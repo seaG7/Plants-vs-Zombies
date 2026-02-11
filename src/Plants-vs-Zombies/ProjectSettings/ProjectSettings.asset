@@ -17,7 +17,7 @@ PlayerSettings:
   defaultCursor: {fileID: 0}
   cursorHotspot: {x: 0, y: 0}
   m_SplashScreenBackgroundColor: {r: 0.13725491, g: 0.12156863, b: 0.1254902, a: 1}
-  m_ShowUnitySplashScreen: 1
+  m_ShowUnitySplashScreen: 0
   m_ShowUnitySplashLogo: 1
   m_SplashScreenOverlayOpacity: 1
   m_SplashScreenAnimation: 1
@@ -44,8 +44,8 @@ PlayerSettings:
   m_HolographicTrackingLossScreen: {fileID: 0}
   defaultScreenWidth: 1024
   defaultScreenHeight: 768
-  defaultScreenWidthWeb: 960
-  defaultScreenHeightWeb: 600
+  defaultScreenWidthWeb: 1920
+  defaultScreenHeightWeb: 1080
   m_StereoRenderingPath: 0
   m_ActiveColorSpace: 1
   unsupportedMSAAFallback: 0
@@ -141,7 +141,8 @@ PlayerSettings:
   visionOSBundleVersion: 1.0
   tvOSBundleVersion: 1.0
   bundleVersion: 0.1.0
-  preloadedAssets: []
+  preloadedAssets:
+  - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   m_HolographicPauseOnTrackingLoss: 1
@@ -551,6 +552,9 @@ PlayerSettings:
   - serializedVersion: 3
     m_BuildTarget: Android
     m_Formats: 03000000
+  - serializedVersion: 3
+    m_BuildTarget: WebGL
+    m_Formats: 05000000
   playModeTestRunnerEnabled: 0
   runPlayModeTestAsEditModeTest: 0
   actionOnDotNetUnhandledException: 1
@@ -817,23 +821,23 @@ PlayerSettings:
   webGLCloseOnQuit: 0
   webWasm2023: 0
   scriptingDefineSymbols:
-    Android: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
+    Android: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
     EmbeddedLinux: DOTWEEN
     GameCoreScarlett: DOTWEEN
     GameCoreXboxOne: DOTWEEN
-    LinuxHeadlessSimulation: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    Nintendo Switch: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    PS4: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    PS5: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
+    LinuxHeadlessSimulation: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    Nintendo Switch: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    PS4: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    PS5: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
     QNX: DOTWEEN
     ReservedCFE: DOTWEEN
-    Standalone: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
+    Standalone: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
     VisionOS: DOTWEEN
-    WebGL: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    Windows Store Apps: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    XboxOne: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    iPhone: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
-    tvOS: DOTWEEN;YandexGamesPlatform_yg;PLUGIN_YG_2;TMP_YG2;RU_YG2
+    WebGL: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    Windows Store Apps: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    XboxOne: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    iPhone: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
+    tvOS: DOTWEEN;PLUGIN_YG_2;TMP_YG2;RU_YG2;StickyAdv_yg;InterstitialAdv_yg;RewardedAdv_yg;PlayerStats_yg;Localization_yg;AutoTranslateLangs_yg;Payments_yg;Metrica_yg;Fullscreen_yg;QuitGameEvent_yg;BannerAdv_yg;Leaderboards_yg;Authorization_yg;EnvirData_yg;Storage_yg;RedefinePlayerPrefs_yg;Review_yg;ServerTime_yg;Flags_yg;OpenURL_yg;GameLabel_yg;Clipboard_yg;YandexGamesPlatform_yg
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:
@@ -843,6 +847,7 @@ PlayerSettings:
   il2cppStacktraceInformation: {}
   managedStrippingLevel:
     Standalone: 4
+    WebGL: 4
   incrementalIl2cppBuild: {}
   suppressCommonWarnings: 1
   allowUnsafeCode: 0
