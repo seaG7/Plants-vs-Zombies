@@ -1,5 +1,15 @@
 {
   "dependencies": {
+    "com.besty.unity-skills": {
+      "version": "https://github.com/Besty0728/Unity-Skills.git?path=/SkillsForUnity#beta",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.0.2",
+        "com.unity.timeline": "1.7.7"
+      },
+      "hash": "cfa14585b621936d5f05eabb1173164fc4c94240"
+    },
     "com.unity.addressables": {
       "version": "2.2.2",
       "depth": 0,
@@ -105,6 +115,13 @@
     "com.unity.nuget.mono-cecil": {
       "version": "1.11.4",
       "depth": 3,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.nuget.newtonsoft-json": {
+      "version": "3.2.1",
+      "depth": 1,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
